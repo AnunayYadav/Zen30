@@ -53,7 +53,6 @@ const AuthScreen: React.FC<{ onLoginSuccess: (user: UserProfile) => void }> = ({
 
   const handleGoogleLogin = async () => {
     setLoading(true);
-    SoundService.playClick();
     try {
       await Storage.loginGoogle();
     } catch (e: any) {
@@ -64,7 +63,6 @@ const AuthScreen: React.FC<{ onLoginSuccess: (user: UserProfile) => void }> = ({
 
   const handleEmailAuth = async () => {
     setLoading(true);
-    SoundService.playClick();
     setError("");
     try {
       if (isLogin) await Storage.loginEmail(email, password);
@@ -98,7 +96,7 @@ const AuthScreen: React.FC<{ onLoginSuccess: (user: UserProfile) => void }> = ({
           G Continue with Google
         </button>
 
-        <p className="text-center text-gray-500 mt-6 cursor-pointer hover:text-white" onClick={() => { setIsLogin(!isLogin); setError(""); SoundService.playClick(); }}>
+        <p className="text-center text-gray-500 mt-6 cursor-pointer hover:text-white" onClick={() => { setIsLogin(!isLogin); setError(""); }}>
             {isLogin ? "New here? Sign Up" : "Have an account? Login"}
         </p>
       </div>
@@ -182,6 +180,7 @@ const ActiveSessionScreen: React.FC<{
     };
 
     const handleToggle = () => {
+        // Sound for timer control is good UX
         SoundService.playClick();
         setIsActive(!isActive);
     };
@@ -202,7 +201,7 @@ const ActiveSessionScreen: React.FC<{
     const handleGenerateHologram = async () => {
         if (!workout) return;
         setLoadingAi(true);
-        SoundService.playClick();
+        // Removed click sound here as per request to reduce sound clutter
         const img = await generateWorkoutVisualization(workout.title);
         setAiImage(img);
         setLoadingAi(false);
@@ -420,12 +419,10 @@ const App: React.FC = () => {
 
   // Handlers
   const handleLogout = () => {
-    SoundService.playClick();
     Storage.logout();
   };
 
   const handleShare = async () => {
-    SoundService.playClick();
     if (navigator.share) {
         try {
             await navigator.share({
@@ -440,7 +437,6 @@ const App: React.FC = () => {
   };
 
   const handleEnablePedometer = async () => {
-    SoundService.playClick();
     const status = await PedometerService.requestPermission();
     if (status === 'granted') {
       setPedometerActive(true);
@@ -455,7 +451,6 @@ const App: React.FC = () => {
   };
 
   const handleUpdateHabit = async (id: string, val: number | boolean) => {
-     SoundService.playClick();
      setHabits(prev => {
          const today = getTodayStr();
          const newLog = { ...prev };
@@ -463,17 +458,20 @@ const App: React.FC = () => {
          newLog[today][id] = val;
          return newLog;
      });
-     if(val) SoundService.playSuccess();
+     // Removed success sound here to be less annoying, unless it's a big milestone? 
+     // For now, silent update as per "just add to the workout section timer".
      await Storage.saveHabitValue(id, val);
   };
 
   const handleStartChallenge = async () => {
+      // Starting a challenge is a big event, keeping playStart.
       SoundService.playStart();
       const newState = await Storage.initChallenge();
       setChallenge(newState);
   };
 
   const handleCompleteChallengeDay = async (day: number) => {
+      // Completing a day is definitely a "success" moment like finishing a workout.
       SoundService.playSuccess();
       const newState = await Storage.completeChallengeDay(day);
       setChallenge({...newState});
@@ -494,15 +492,14 @@ const App: React.FC = () => {
       switch (currentScreen) {
           case Screen.DASHBOARD: 
              return <DashboardScreen 
-                onNavigate={(s) => { SoundService.playClick(); setCurrentScreen(s); }} 
+                onNavigate={(s) => { setCurrentScreen(s); }} 
                 user={user!} streak={calculatedStreak} todaysStats={todaysStats} 
                 onStartQuickWorkout={(t) => {
-                    SoundService.playClick();
                     if(t === 'Stretch') { setActiveWorkout(WORKOUT_DB.find(w => w.category==='Stretch') || null); setActiveSessionMode('Workout'); }
                 }} 
                 onEnablePedometer={handleEnablePedometer} pedometerActive={pedometerActive}
             />;
-          case Screen.WORKOUTS: return <WorkoutSelectionScreen onStartWorkout={(w) => { SoundService.playClick(); setActiveWorkout(w); setActiveSessionMode('Workout'); }} />;
+          case Screen.WORKOUTS: return <WorkoutSelectionScreen onStartWorkout={(w) => { setActiveWorkout(w); setActiveSessionMode('Workout'); }} />;
           case Screen.RUNNING:  setActiveSessionMode('Run'); return null; // Immediately switches to session overlay
           case Screen.CHALLENGE: return <ChallengeScreen state={challenge} onInit={handleStartChallenge} onCompleteDay={handleCompleteChallengeDay} />;
           case Screen.HABITS: return <HabitTrackerScreen habits={habits} onUpdateHabit={handleUpdateHabit} />;
@@ -511,7 +508,6 @@ const App: React.FC = () => {
                 user={user!} history={history} streak={calculatedStreak} 
                 onLogout={handleLogout} 
                 onUpdateWeight={async (w) => {
-                    SoundService.playClick();
                     const newHistory = [...user!.weightHistory, { date: getTodayStr(), weight: w }];
                     const updated = { ...user!, weight: w, weightHistory: newHistory };
                     setUser(updated);
@@ -520,7 +516,7 @@ const App: React.FC = () => {
                 onUpdateImage={async (img) => {
                     // Placeholder for image update logic
                 }}
-                onOpenSettings={() => { SoundService.playClick(); setShowSettings(true); }}
+                onOpenSettings={() => { setShowSettings(true); }}
                 onShare={handleShare}
           />;
           default: return null;
@@ -538,8 +534,8 @@ const App: React.FC = () => {
       {user && !activeSessionMode && currentScreen !== Screen.SPLASH && currentScreen !== Screen.AUTH && (
           <>
             {renderContent()}
-            <Navigation currentScreen={currentScreen} onNavigate={(s) => { SoundService.playClick(); setCurrentScreen(s); }} />
-            <SettingsModal isOpen={showSettings} onClose={() => { SoundService.playClick(); setShowSettings(false); }} user={user} />
+            <Navigation currentScreen={currentScreen} onNavigate={(s) => { setCurrentScreen(s); }} />
+            <SettingsModal isOpen={showSettings} onClose={() => { setShowSettings(false); }} user={user} />
           </>
       )}
 
