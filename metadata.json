@@ -1,0 +1,7 @@
+{
+  "name": "NeonFit - Gen Z Fitness",
+  "description": "A premium, dark-mode fitness app with neon accents, AI-powered workouts, and motivation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
