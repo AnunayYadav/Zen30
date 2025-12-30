@@ -16,16 +16,25 @@ export const Storage = {
 
   // Login with Google OAuth
   loginGoogle: async () => {
-    // WebViews often run on file:// which Supabase rejects as a redirect URL.
-    // We strictly use the PRODUCTION_URL or window.location.origin if it's http(s).
+    // Detect environment
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     
-    // If we are in a WebView (file://), default to PROD URL so the redirect goes to the web.
-    // The Android App must be configured to intercept this URL (Deep Link).
-    let redirectUrl = isLocal ? window.location.origin : PRODUCTION_URL;
-
-    // Optional: If your Web2App converter supports custom schemes, uncomment this:
-    // redirectUrl = "zen30://auth/callback";
+    // LOGIN LOGIC:
+    // 1. Localhost -> stays on localhost
+    // 2. Mobile Device -> Uses 'zen30://' scheme. This forces the Android/iOS browser 
+    //    to flip back to your App after Google Login.
+    // 3. Desktop Web -> Uses the https URL.
+    
+    let redirectUrl = PRODUCTION_URL;
+    
+    if (isLocal) {
+      redirectUrl = window.location.origin;
+    } else if (isMobile) {
+      // THIS FIXES THE ANDROID LOGIN ISSUE
+      // Make sure 'zen30://auth/callback' is added to Supabase Redirect URLs
+      redirectUrl = "zen30://auth/callback";
+    }
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
