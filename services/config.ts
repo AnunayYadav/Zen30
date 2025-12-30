@@ -1,10 +1,11 @@
 // --- CONFIGURATION ---
 
-// process.env is polyfilled in vite.config.ts
-// We use 'as any' to avoid TypeScript strictness about 'process' if types aren't installed
+// process.env is polyfilled in vite.config.ts with the correct values found during build time.
+// We use 'as any' to avoid TypeScript strictness.
 const env = (typeof process !== 'undefined' ? process.env : {}) as any;
 
 export const SUPABASE_CONFIG = {
+  // These keys are guaranteed to be populated by vite.config.ts if they existed in the environment
   url: env.VITE_SUPABASE_URL || "",
   anonKey: env.VITE_SUPABASE_ANON_KEY || ""
 };
