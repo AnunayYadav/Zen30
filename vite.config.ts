@@ -3,18 +3,23 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
-  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, (process as any).cwd(), '');
+
+  // Helper to resolve the value from .env file OR system environment (Vercel/Netlify)
+  // This ensures we catch variables set in Vercel Dashboard even if not in a local .env file
+  const getVal = (key: string) => {
+    return env[key] || (process.env as any)[key] || "";
+  };
 
   return {
     plugins: [react()],
     define: {
-      // We explicitly define process.env.API_KEY to satisfy the @google/genai SDK requirement
-      // and prevent it from crashing in a browser environment.
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || ""),
-      
-      // If you have other specific non-VITE_ prefixed vars to expose, add them here.
-      // VITE_ prefixed variables (like VITE_SUPABASE_URL) are automatically exposed on import.meta.env
+      // CRITICAL: JSON.stringify values so they are injected as string literals ("abc"), not raw code (abc).
+      'process.env': {
+        API_KEY: JSON.stringify(getVal('API_KEY')),
+        VITE_SUPABASE_URL: JSON.stringify(getVal('VITE_SUPABASE_URL')),
+        VITE_SUPABASE_ANON_KEY: JSON.stringify(getVal('VITE_SUPABASE_ANON_KEY'))
+      }
     },
   };
 });

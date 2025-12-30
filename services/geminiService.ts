@@ -2,14 +2,11 @@ import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { WorkoutSegment } from "../types";
 
 // Use the environment variable directly as required by guidelines
-// Fallback to avoid immediate crash if key is missing during development
-const apiKey = process.env.API_KEY || "placeholder_key";
-const ai = new GoogleGenAI({ apiKey });
+// We assume process.env.API_KEY is available (polyfilled by vite.config.ts)
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateMotivationalTip = async (): Promise<string> => {
   try {
-    if (apiKey === "placeholder_key") return "Add your API Key to .env to enable AI features.";
-    
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: "Give me a short, punchy, Gen-Z style fitness motivation quote. Max 15 words. No emojis in text.",
@@ -23,8 +20,6 @@ export const generateMotivationalTip = async (): Promise<string> => {
 
 export const generateRunningCoachSpeech = async (text: string): Promise<AudioBuffer | null> => {
   try {
-    if (apiKey === "placeholder_key") return null;
-
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text }] }],
@@ -59,8 +54,6 @@ export const generateRunningCoachSpeech = async (text: string): Promise<AudioBuf
 
 export const generateWorkoutPlan = async (title: string, durationStr: string, difficulty: string): Promise<WorkoutSegment[]> => {
   try {
-    if (apiKey === "placeholder_key") throw new Error("Missing API Key");
-
     // Optimized for speed: Short prompt, no thinking budget
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -108,8 +101,6 @@ export const generateWorkoutPlan = async (title: string, durationStr: string, di
 
 export const generateWorkoutVisualization = async (exerciseName: string): Promise<string | null> => {
   try {
-    if (apiKey === "placeholder_key") return null;
-
     // gemini-2.5-flash-image supports aspect ratio config
     // Using 16:9 to fit the wide mobile container without cropping
     const prompt = `Futuristic neon green wireframe hologram of a fitness figure performing ${exerciseName}. Side view, minimalist schematic, black background.`;

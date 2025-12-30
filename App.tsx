@@ -7,11 +7,11 @@ import { SoundService } from './services/soundService';
 import { PedometerService } from './services/pedometer';
 import { WORKOUT_DB } from './services/workoutData';
 import { CHALLENGE_DB } from './services/challengeData';
-import { supabase } from './services/supabaseClient';
+import { supabase, isConfigured } from './services/supabaseClient';
 import { 
   Play, Pause, StopCircle, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   User as UserIcon, LogOut, Settings, Share2, Camera, Lock, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, X, Volume2,
-  Monitor, ChevronRight, SkipForward, BrainCircuit
+  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
 
@@ -76,6 +76,19 @@ const AuthScreen: React.FC<{ onLoginSuccess: (user: UserProfile) => void }> = ({
   return (
     <div className="h-screen w-full flex flex-col justify-center bg-black p-8 relative overflow-hidden">
       <div className="absolute top-[-20%] left-[-20%] w-[140%] h-[50%] bg-neon-green/5 blur-3xl rounded-full pointer-events-none" />
+      
+      {!isConfigured && (
+        <div className="absolute top-4 left-0 right-0 px-8">
+           <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 p-3 rounded-xl flex items-center gap-3 text-xs">
+             <WifiOff size={16} />
+             <div>
+               <strong className="block font-bold">Offline / Demo Mode</strong>
+               Database not configured. Your progress will be saved locally.
+             </div>
+           </div>
+        </div>
+      )}
+
       <h1 className="text-4xl font-bold text-white mb-2 z-10">{isLogin ? "Welcome Back" : "Join the Grind"}</h1>
       <p className="text-gray-400 mb-8 z-10">{isLogin ? "Login to sync your stats." : "Create an account to start."}</p>
       
@@ -93,7 +106,7 @@ const AuthScreen: React.FC<{ onLoginSuccess: (user: UserProfile) => void }> = ({
         <div className="flex items-center my-4"><div className="flex-grow border-t border-white/10"></div><span className="mx-4 text-gray-600">or</span><div className="flex-grow border-t border-white/10"></div></div>
 
         <button onClick={handleGoogleLogin} className="w-full bg-white text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-gray-200">
-          G Continue with Google
+          <span className="text-lg font-bold">G</span> {isConfigured ? "Continue with Google" : "Demo Login (No Account)"}
         </button>
 
         <p className="text-center text-gray-500 mt-6 cursor-pointer hover:text-white" onClick={() => { setIsLogin(!isLogin); setError(""); }}>
@@ -113,6 +126,11 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, user: User
         <h2 className="text-2xl font-bold text-white mb-6">Settings</h2>
         
         <div className="space-y-4">
+          {!isConfigured && (
+            <div className="bg-yellow-500/10 text-yellow-500 p-3 rounded-xl text-xs flex items-center gap-2 mb-4">
+               <WifiOff size={16}/> App is running in Local Demo Mode.
+            </div>
+          )}
           <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
              <div className="flex items-center gap-3">
                <Volume2 className="text-neon-green" size={20} />

@@ -22,12 +22,12 @@ const setLocalDB = (key: string, val: any) => localStorage.setItem(key, JSON.str
 export const Storage = {
   // --- Auth & User Management ---
 
-  // Listen for auth changes (used in App.tsx)
   onAuthStateChange: (callback: (session: any) => void) => {
     if (!isConfigured) {
-      // OFFLINE MODE: Check for fake session
+      // OFFLINE MODE: Check for fake session immediately
       const user = getDemoUser();
-      setTimeout(() => callback(user ? { user } : null), 100); // Async simulation
+      // Execute callback immediately to prevent "flicker"
+      callback(user ? { user } : null);
       return { data: { subscription: { unsubscribe: () => {} } } };
     }
 
@@ -36,14 +36,18 @@ export const Storage = {
     });
   },
 
-  // Login with Google OAuth
   loginGoogle: async () => {
     if (!isConfigured) {
-      // Mock Google Login
-      alert("Google Login requires valid API Keys. Logging in as Demo User.");
-      const user = { id: 'demo-google', email: 'demo@gmail.com', user_metadata: { full_name: 'Demo G-User' } };
+      // Mock Google Login - Seamless
+      console.log("Offline Mode: Logging in as Demo User via Google...");
+      const user = { 
+        id: 'demo-google', 
+        email: 'demo@zen30.app', 
+        user_metadata: { full_name: 'Demo Athlete' },
+        app_metadata: { provider: 'google' }
+      };
       setDemoUser(user);
-      window.location.reload(); // Reload to trigger auth state change in App
+      window.location.reload(); 
       return;
     }
     
@@ -60,13 +64,17 @@ export const Storage = {
     if (error) throw error;
   },
 
-  // Login with Email/Password
   loginEmail: async (email: string, password?: string) => {
     if (!password) throw new Error("Password required");
     
     if (!isConfigured) {
       // Mock Email Login
-      const user = { id: 'demo-email', email, user_metadata: { full_name: 'Demo User' } };
+      console.log("Offline Mode: Logging in as Demo User via Email...");
+      const user = { 
+        id: 'demo-email', 
+        email, 
+        user_metadata: { full_name: 'Demo User' } 
+      };
       setDemoUser(user);
       window.location.reload();
       return user;
@@ -80,13 +88,16 @@ export const Storage = {
     return data.user;
   },
 
-  // Signup with Email
   signupEmail: async (email: string, password?: string, name?: string) => {
     if (!password) throw new Error("Password required");
 
     if (!isConfigured) {
       // Mock Signup
-      const user = { id: 'demo-email', email, user_metadata: { full_name: name || 'Demo User' } };
+      const user = { 
+        id: 'demo-email', 
+        email, 
+        user_metadata: { full_name: name || 'Demo User' } 
+      };
       setDemoUser(user);
       window.location.reload();
       return user;
@@ -110,7 +121,7 @@ export const Storage = {
       return;
     }
     await supabase.auth.signOut();
-    localStorage.clear(); // Clear local cache
+    localStorage.clear(); 
   },
 
   // --- Profile Data ---
@@ -126,7 +137,7 @@ export const Storage = {
       .eq('id', userId)
       .single();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 is 'not found'
+    if (error && error.code !== 'PGRST116') {
       console.error("Error fetching profile:", error);
       return null;
     }
@@ -151,10 +162,8 @@ export const Storage = {
     return null;
   },
 
-  // Create or Update Profile
   upsertProfile: async (user: Partial<UserProfile>) => {
     if (!isConfigured) {
-      // Merge with existing profile
       const current = getLocalDB('zen30_profile', {}) as UserProfile;
       const updated = { ...current, ...user };
       setLocalDB('zen30_profile', updated);
@@ -165,7 +174,6 @@ export const Storage = {
     const userId = session.data.session?.user?.id;
     if (!userId) return;
 
-    // Map camelCase to snake_case for DB
     const dbPayload = {
       id: userId,
       name: user.name,
@@ -183,13 +191,9 @@ export const Storage = {
       updated_at: new Date().toISOString()
     };
 
-    // Remove undefined keys
     Object.keys(dbPayload).forEach(key => (dbPayload as any)[key] === undefined && delete (dbPayload as any)[key]);
 
-    const { error } = await supabase
-      .from('profiles')
-      .upsert(dbPayload);
-    
+    const { error } = await supabase.from('profiles').upsert(dbPayload);
     if (error) console.error("Error saving profile:", error);
   },
 
@@ -253,14 +257,8 @@ export const Storage = {
   getHabits: async (): Promise<HabitLog> => {
     if (!isConfigured) return getLocalDB<HabitLog>('zen30_habits', {});
 
-    const { data, error } = await supabase
-      .from('habits')
-      .select('*');
-
-    if (error) {
-      console.error("Error fetching habits:", error);
-      return {};
-    }
+    const { data, error } = await supabase.from('habits').select('*');
+    if (error) return {};
 
     const log: HabitLog = {};
     data?.forEach((row: any) => {
@@ -294,7 +292,6 @@ export const Storage = {
       }, { onConflict: 'user_id, date, habit_id' });
 
     if (error) console.error("Error saving habit:", error);
-    
     return await Storage.getHabits();
   },
 
@@ -303,13 +300,8 @@ export const Storage = {
   getChallenge: async (): Promise<ChallengeState | null> => {
     if (!isConfigured) return getLocalDB<ChallengeState | null>('zen30_challenge', null);
 
-    const { data, error } = await supabase
-      .from('challenges')
-      .select('*')
-      .maybeSingle();
-
-    if (error) console.error("Error fetching challenge:", error);
-    if (!data) return null;
+    const { data, error } = await supabase.from('challenges').select('*').maybeSingle();
+    if (error || !data) return null;
 
     return {
       startDate: data.start_date,
@@ -329,25 +321,17 @@ export const Storage = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { startDate: '', completedDays: [] };
     
-    const { error } = await supabase
-      .from('challenges')
-      .upsert({
+    await supabase.from('challenges').upsert({
         user_id: user.id,
         start_date: start,
         completed_days: []
       });
-
-    if (error) console.error("Error init challenge:", error);
     return { startDate: start, completedDays: [] };
   },
 
   completeChallengeDay: async (day: number) => {
     const current = await Storage.getChallenge();
-    
-    if (!current) {
-      // Init if not exists
-      return await Storage.initChallenge();
-    }
+    if (!current) return await Storage.initChallenge();
 
     if (!current.completedDays.includes(day)) {
       const newDays = [...current.completedDays, day];
@@ -360,15 +344,10 @@ export const Storage = {
 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { error } = await supabase
-          .from('challenges')
-          .update({ completed_days: newDays })
-          .eq('user_id', user.id);
-        if (error) console.error("Error updating challenge:", error);
+        await supabase.from('challenges').update({ completed_days: newDays }).eq('user_id', user.id);
       }
       return newState;
     }
-    
     return current;
   },
 
@@ -385,7 +364,6 @@ export const Storage = {
       .select('steps')
       .eq('date', today)
       .maybeSingle();
-      
     return data?.steps || 0;
   },
 
