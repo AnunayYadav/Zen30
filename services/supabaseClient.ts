@@ -1,15 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_CONFIG } from './config';
 
-// Safely access process.env if it exists, otherwise use empty object
-const env = typeof process !== 'undefined' && process.env ? process.env : {};
+const supabaseUrl = SUPABASE_CONFIG.url;
+const supabaseAnonKey = SUPABASE_CONFIG.anonKey;
 
-// These should be set in your project's environment variables
-// We provide placeholders to prevent the app from crashing immediately if keys are missing
-const supabaseUrl = env.SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = env.SUPABASE_ANON_KEY || 'placeholder-key';
+// Check if user has configured the keys
+const isConfigured = 
+  supabaseUrl && 
+  supabaseUrl !== "INSERT_YOUR_SUPABASE_URL_HERE" && 
+  supabaseAnonKey && 
+  supabaseAnonKey !== "INSERT_YOUR_ANON_KEY_HERE";
 
-if (supabaseUrl === 'https://placeholder.supabase.co') {
-  console.warn('Supabase URL is missing. Database features will not work until SUPABASE_URL is set.');
+if (!isConfigured) {
+  console.warn('⚠️ Supabase not configured. Please update services/config.ts with your API keys.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  isConfigured ? supabaseUrl : 'https://placeholder.supabase.co', 
+  isConfigured ? supabaseAnonKey : 'placeholder-key'
+);
