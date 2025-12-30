@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { UserProfile, WorkoutSession, HabitLog, ChallengeState, WeightEntry } from '../types';
+import { PRODUCTION_URL } from './config';
 
 export const getTodayStr = () => new Date().toISOString().split('T')[0];
 
@@ -15,10 +16,22 @@ export const Storage = {
 
   // Login with Google OAuth
   loginGoogle: async () => {
+    // WebViews often run on file:// which Supabase rejects as a redirect URL.
+    // We strictly use the PRODUCTION_URL or window.location.origin if it's http(s).
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    // If we are in a WebView (file://), default to PROD URL so the redirect goes to the web.
+    // The Android App must be configured to intercept this URL (Deep Link).
+    let redirectUrl = isLocal ? window.location.origin : PRODUCTION_URL;
+
+    // Optional: If your Web2App converter supports custom schemes, uncomment this:
+    // redirectUrl = "zen30://auth/callback";
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin, // Redirect back to this app
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: false, // Explicitly require browser for Google Security
       },
     });
     if (error) throw error;
@@ -270,9 +283,7 @@ export const Storage = {
     return current;
   },
 
-  // --- Passive Steps (Local only for performance + simple Cloud sync) ---
-  // Steps are high frequency, we might sync them to DB only occasionally or on page load/exit
-  // For simplicity, we'll pull from DB on load, and save to DB on update
+  // --- Passive Steps ---
   getPassiveSteps: async (): Promise<number> => {
     const today = getTodayStr();
     const { data } = await supabase
@@ -296,12 +307,11 @@ export const Storage = {
     }, { onConflict: 'user_id, date' });
   },
   
-  // Helper for Daily Tip (Can stay local or fetch from generic table)
   getDailyTip: () => {
-     const d = localStorage.getItem('neonfit_dailytip');
+     const d = localStorage.getItem('zen30_dailytip');
      return d ? JSON.parse(d) : null;
   },
   saveDailyTip: (text: string) => {
-     localStorage.setItem('neonfit_dailytip', JSON.stringify({ date: getTodayStr(), text }));
+     localStorage.setItem('zen30_dailytip', JSON.stringify({ date: getTodayStr(), text }));
   }
 };

@@ -6,8 +6,11 @@ export const SUPABASE_CONFIG = {
   anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibWhyYXBwZGhhdW5ncHlqa2dkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwODM2NjMsImV4cCI6MjA4MjY1OTY2M30.cuClGjUp9QNivkNpC35cT4eRbnS1nIE4wIq3LH_lR_Y"
 };
 
+// IMPORTANT: Replace this with your actual deployed URL (e.g. https://zen30.vercel.app)
+// This is required for mobile redirects to work properly.
+export const PRODUCTION_URL = "https://zen30.vercel.app"; 
+
 // Gemini API Key - Safely check environment without crashing
-// We try to access process.env (Vercel) or import.meta.env (Vite)
 const getApiKey = () => {
   try {
     // @ts-ignore
