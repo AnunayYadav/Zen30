@@ -676,23 +676,21 @@ const App: React.FC = () => {
                 // IMPORTANT: If we are in the Mobile Browser (Chrome/Safari) after redirect,
                 // we must bounce the user back to the Native App (zen30://)
                 
-                // We attempt to open the custom scheme.
-                // If this is the App Wrapper, this line does nothing or reloads safely.
-                // If this is Safari, it prompts "Open Zen30?"
-                
                 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                 if (isMobile) {
                     // Give the session a moment to settle in localstorage, then bounce.
                     setTimeout(() => {
-                       // We pass the full hash so the app can handle it if needed, 
-                       // but mostly we rely on the App opening and checking its own session.
+                       // We pass the full hash so the app can handle it if needed.
                        // NOTE: App Wrapper must be configured to handle zen30://
                        window.location.href = `zen30://google-auth-callback${hash}`;
                     }, 500);
+                    
+                    // ON MOBILE: DO NOT CLEAR URL IMMEDIATELY.
+                    // This allows the manual "Return to App" button to scrape the hash if the auto-redirect fails.
+                } else {
+                    // Desktop: Clean the URL for the current view
+                    window.history.replaceState({}, document.title, '/');
                 }
-
-                // Clean the URL for the current view
-                window.history.replaceState({}, document.title, '/');
             }
         }
     };
@@ -859,9 +857,9 @@ const App: React.FC = () => {
             <div className="h-screen w-full flex flex-col items-center justify-center bg-black">
                 <Loader2 className="animate-spin text-neon-green mb-4" size={48} />
                 <p className="text-gray-400 animate-pulse">Syncing with Zen30 Cloud...</p>
-                {/* Fallback button if deep link fails */}
+                {/* Fallback button if deep link fails. Includes hash so we don't lose the token. */}
                 <button 
-                  onClick={() => window.location.href = "zen30://google-auth"}
+                  onClick={() => window.location.href = `zen30://google-auth-callback${window.location.hash}`}
                   className="mt-8 text-xs text-neon-green underline"
                 >
                   Return to App manually
