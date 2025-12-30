@@ -11,7 +11,7 @@ import {
   Play, Pause, StopCircle, Flame, Moon, Sun, Monitor, 
   ChevronRight, ArrowRight, User as UserIcon, LogOut, Settings, 
   Zap, Clock, MapPin, Activity, Dumbbell, Calendar, CheckSquare, BarChart2, Footprints,
-  Plus, Minus, Camera, Lock, CheckCircle, AlertCircle, X, Loader2, Trophy, Edit2, Share2
+  Plus, Minus, Camera, Lock, CheckCircle, AlertCircle, X, Loader2, Trophy, Edit2, Share2, Smartphone
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, CartesianGrid } from 'recharts';
 
@@ -673,8 +673,25 @@ const App: React.FC = () => {
             // Supabase client auto-parses this usually, but checking getSession ensures it.
             const { data } = await supabase.auth.getSession();
             if (data.session) {
-                // Clear the ugly hash from URL and set path to root.
-                // Since we redirected to root, this just cleans the URL.
+                // IMPORTANT: If we are in the Mobile Browser (Chrome/Safari) after redirect,
+                // we must bounce the user back to the Native App (zen30://)
+                
+                // We attempt to open the custom scheme.
+                // If this is the App Wrapper, this line does nothing or reloads safely.
+                // If this is Safari, it prompts "Open Zen30?"
+                
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                if (isMobile) {
+                    // Give the session a moment to settle in localstorage, then bounce.
+                    setTimeout(() => {
+                       // We pass the full hash so the app can handle it if needed, 
+                       // but mostly we rely on the App opening and checking its own session.
+                       // NOTE: App Wrapper must be configured to handle zen30://
+                       window.location.href = `zen30://google-auth-callback${hash}`;
+                    }, 500);
+                }
+
+                // Clean the URL for the current view
                 window.history.replaceState({}, document.title, '/');
             }
         }
@@ -842,6 +859,13 @@ const App: React.FC = () => {
             <div className="h-screen w-full flex flex-col items-center justify-center bg-black">
                 <Loader2 className="animate-spin text-neon-green mb-4" size={48} />
                 <p className="text-gray-400 animate-pulse">Syncing with Zen30 Cloud...</p>
+                {/* Fallback button if deep link fails */}
+                <button 
+                  onClick={() => window.location.href = "zen30://google-auth"}
+                  className="mt-8 text-xs text-neon-green underline"
+                >
+                  Return to App manually
+                </button>
             </div>
         );
     }
