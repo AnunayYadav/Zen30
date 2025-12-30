@@ -1,34 +1,23 @@
 // --- CONFIGURATION ---
-// We access process.env properties DIRECTLY so the Vite bundler can
-// replace them with the strings defined in vite.config.ts
 
-// Helper to safely get a value checking both process.env (Vercel/Node) and import.meta.env (Vite)
-// Note: We avoid dynamic key access (e.g. process.env[key]) because bundlers cannot statically analyze that.
-
-const getUrl = () => {
-  if (typeof process !== 'undefined' && process.env.SUPABASE_URL) return process.env.SUPABASE_URL;
-  if (typeof process !== 'undefined' && process.env.VITE_SUPABASE_URL) return process.env.VITE_SUPABASE_URL;
-  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) return (import.meta as any).env.VITE_SUPABASE_URL;
-  return "";
-};
-
-const getKey = () => {
-  if (typeof process !== 'undefined' && process.env.SUPABASE_ANON_KEY) return process.env.SUPABASE_ANON_KEY;
-  if (typeof process !== 'undefined' && process.env.VITE_SUPABASE_ANON_KEY) return process.env.VITE_SUPABASE_ANON_KEY;
-  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) return (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
-  return "";
-};
-
-const getApiKey = () => {
-  if (typeof process !== 'undefined' && process.env.API_KEY) return process.env.API_KEY;
-  if (typeof process !== 'undefined' && process.env.VITE_API_KEY) return process.env.VITE_API_KEY;
-  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_KEY) return (import.meta as any).env.VITE_API_KEY;
-  return "";
-};
-
+// Supabase Configuration (Hardcoded as requested)
 export const SUPABASE_CONFIG = {
-  url: getUrl(),
-  anonKey: getKey()
+  url: "https://bbmhrappdhaungpyjkgd.supabase.co",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibWhyYXBwZGhhdW5ncHlqa2dkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwODM2NjMsImV4cCI6MjA4MjY1OTY2M30.cuClGjUp9QNivkNpC35cT4eRbnS1nIE4wIq3LH_lR_Y"
+};
+
+// Gemini API Key - Safely check environment without crashing
+// We try to access process.env (Vercel) or import.meta.env (Vite)
+const getApiKey = () => {
+  try {
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env?.API_KEY) return process.env.API_KEY;
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) return import.meta.env.VITE_API_KEY;
+    return "";
+  } catch (e) {
+    return "";
+  }
 };
 
 export const GEMINI_API_KEY = getApiKey();
