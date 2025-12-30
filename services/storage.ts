@@ -16,31 +16,22 @@ export const Storage = {
 
   // Login with Google OAuth
   loginGoogle: async () => {
-    // Detect environment
+    // We use /auth/callback for the redirect.
+    // This creates a specific path that is easier for mobile apps to intercept
+    // via Universal Links/App Links than the root domain.
+    
+    // Check if we are on localhost to avoid breaking dev environment
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     
-    // LOGIN LOGIC:
-    // 1. Localhost -> stays on localhost
-    // 2. Mobile Device -> Uses 'zen30://' scheme. This forces the Android/iOS browser 
-    //    to flip back to your App after Google Login.
-    // 3. Desktop Web -> Uses the https URL.
-    
-    let redirectUrl = PRODUCTION_URL;
-    
-    if (isLocal) {
-      redirectUrl = window.location.origin;
-    } else if (isMobile) {
-      // THIS FIXES THE ANDROID LOGIN ISSUE
-      // Make sure 'zen30://auth/callback' is added to Supabase Redirect URLs
-      redirectUrl = "zen30://auth/callback";
-    }
+    // IF PRODUCTION: Use https://zen30.vercel.app/auth/callback
+    // IF LOCAL: Use http://localhost:5173
+    const redirectUrl = isLocal ? window.location.origin : `${PRODUCTION_URL}/auth/callback`;
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
-        skipBrowserRedirect: false, // Explicitly require browser for Google Security
+        skipBrowserRedirect: false, 
       },
     });
     if (error) throw error;

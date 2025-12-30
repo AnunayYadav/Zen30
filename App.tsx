@@ -673,8 +673,8 @@ const App: React.FC = () => {
             // Supabase client auto-parses this usually, but checking getSession ensures it.
             const { data } = await supabase.auth.getSession();
             if (data.session) {
-                // Clear the ugly hash from URL
-                window.history.replaceState({}, document.title, window.location.pathname);
+                // Clear the ugly hash from URL and set path to root to hide /auth/callback
+                window.history.replaceState({}, document.title, '/');
             }
         }
     };
