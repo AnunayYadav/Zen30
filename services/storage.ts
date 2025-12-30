@@ -16,16 +16,15 @@ export const Storage = {
 
   // Login with Google OAuth
   loginGoogle: async () => {
-    // We use /auth/callback for the redirect.
-    // This creates a specific path that is easier for mobile apps to intercept
-    // via Universal Links/App Links than the root domain.
+    // FIX: Redirecting to a specific path (like /auth/callback) causes a 404 
+    // because this is a Single Page App (SPA) without server-side routing.
+    // We must redirect to the ROOT domain. Supabase will append the token as a hash.
     
-    // Check if we are on localhost to avoid breaking dev environment
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     
-    // IF PRODUCTION: Use https://zen30.vercel.app/auth/callback
+    // IF PRODUCTION: Use https://zen30.vercel.app
     // IF LOCAL: Use http://localhost:5173
-    const redirectUrl = isLocal ? window.location.origin : `${PRODUCTION_URL}/auth/callback`;
+    const redirectUrl = isLocal ? window.location.origin : PRODUCTION_URL;
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
