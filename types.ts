@@ -1,3 +1,4 @@
+
 export enum Screen {
   SPLASH = 'SPLASH',
   ONBOARDING = 'ONBOARDING',
@@ -86,4 +87,12 @@ export interface ChallengeTask {
 export interface ChallengeState {
   startDate: string; // ISO String of when challenge started
   completedDays: number[]; // Array of day numbers (1-30) completed
+}
+
+export interface WorkoutSegment {
+  name: string;
+  type: 'exercise' | 'rest';
+  duration: number; // seconds
+  reps?: string;
+  notes?: string;
 }

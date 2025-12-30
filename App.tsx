@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Navigation } from './components/Navigation';
-import { Screen, Workout, WorkoutSession, UserProfile, HabitLog, ChallengeState, Habit, WorkoutCategory } from './types';
-import { generateMotivationalTip, generateWorkoutVisualization } from './services/geminiService';
+import { Screen, Workout, WorkoutSession, UserProfile, HabitLog, ChallengeState, Habit, WorkoutCategory, WorkoutSegment } from './types';
+import { generateMotivationalTip, generateWorkoutVisualization, generateWorkoutPlan } from './services/geminiService';
 import { Storage, getTodayStr } from './services/storage';
 import { SoundService } from './services/soundService';
 import { PedometerService } from './services/pedometer';
@@ -11,7 +11,7 @@ import { supabase } from './services/supabaseClient';
 import { 
   Play, Pause, StopCircle, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   User as UserIcon, LogOut, Settings, Share2, Camera, Lock, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, X, Volume2,
-  Monitor, ChevronRight
+  Monitor, ChevronRight, SkipForward, BrainCircuit
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
 
@@ -139,171 +139,266 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, user: User
   );
 };
 
-// --- Active Session with Timer & AI Visualization ---
+// --- Intelligent Active Session ---
 const ActiveSessionScreen: React.FC<{ 
     mode: 'Run' | 'Workout', 
     workout: Workout | null, 
     onClose: (session: WorkoutSession | null) => void 
 }> = ({ mode, workout, onClose }) => {
-    const [seconds, setSeconds] = useState(0);
-    const [isActive, setIsActive] = useState(false); // Start paused
-    const [aiImage, setAiImage] = useState<string | null>(null);
-    const [loadingAi, setLoadingAi] = useState(false);
+    // Session State
+    const [status, setStatus] = useState<'initializing' | 'active' | 'paused' | 'finished'>('initializing');
+    const [segments, setSegments] = useState<WorkoutSegment[]>([]);
+    const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+    const [timeLeft, setTimeLeft] = useState(0);
+    const [totalTimeElapsed, setTotalTimeElapsed] = useState(0);
 
-    // Initial Start Effect
+    // AI Visualization
+    const [currentImage, setCurrentImage] = useState<string | null>(null);
+    const [generatingImage, setGeneratingImage] = useState(false);
+
+    // Initial Plan Generation
     useEffect(() => {
-        SoundService.playStart();
-        setIsActive(true);
-    }, []);
+        const initSession = async () => {
+            if (mode === 'Workout' && workout) {
+                // Generate Intelligent Plan
+                const plan = await generateWorkoutPlan(workout.title, workout.duration, workout.difficulty);
+                setSegments(plan);
+                if (plan.length > 0) {
+                    setTimeLeft(plan[0].duration);
+                    setStatus('active');
+                    SoundService.playStart();
+                    // Generate first image
+                    fetchImage(plan[0].name);
+                }
+            } else {
+                // Simple run mode (no segments)
+                setStatus('active');
+                SoundService.playStart();
+            }
+        };
+        initSession();
+    }, [mode, workout]);
+
+    const fetchImage = async (exerciseName: string) => {
+        setGeneratingImage(true);
+        const img = await generateWorkoutVisualization(exerciseName);
+        if (img) setCurrentImage(img);
+        setGeneratingImage(false);
+    };
 
     // Timer Logic
     useEffect(() => {
-        let interval: any = null;
-        if (isActive) {
+        let interval: NodeJS.Timeout;
+
+        if (status === 'active') {
             interval = setInterval(() => {
-                setSeconds(s => {
-                   const next = s + 1;
-                   // Sound effects logic
-                   if (next % 60 === 0) SoundService.playTick(); // Minute tick
-                   return next;
-                });
+                setTotalTimeElapsed(prev => prev + 1);
+
+                if (mode === 'Workout') {
+                    setTimeLeft(prev => {
+                        if (prev <= 1) {
+                            handleSegmentFinish();
+                            return 0;
+                        }
+                        // Sound Effects for countdown
+                        if (prev <= 4) SoundService.playTick(); 
+                        return prev - 1;
+                    });
+                }
             }, 1000);
         }
+
         return () => clearInterval(interval);
-    }, [isActive]);
+    }, [status, mode, segments, currentSegmentIndex]);
 
-    // Format Timer
-    const formatTime = (totalSeconds: number) => {
-        const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-        const s = (totalSeconds % 60).toString().padStart(2, '0');
-        return `${m}:${s}`;
-    };
-
-    const handleToggle = () => {
-        // Sound for timer control is good UX
-        SoundService.playClick();
-        setIsActive(!isActive);
+    const handleSegmentFinish = () => {
+        const nextIndex = currentSegmentIndex + 1;
+        if (nextIndex < segments.length) {
+            // Move to next segment
+            const nextSegment = segments[nextIndex];
+            setCurrentSegmentIndex(nextIndex);
+            setTimeLeft(nextSegment.duration);
+            
+            // Sounds
+            if (nextSegment.type === 'rest') {
+                SoundService.playCountdown(); // Distinct sound for rest
+            } else {
+                SoundService.playStart(); // Go sound for exercise
+                fetchImage(nextSegment.name);
+            }
+        } else {
+            // Workout Complete
+            setStatus('finished');
+            SoundService.playSuccess();
+        }
     };
 
     const handleFinish = () => {
         SoundService.playSuccess();
-        const calories = Math.floor(seconds * (mode === 'Run' ? 0.15 : 0.12));
+        const calories = Math.floor(totalTimeElapsed * (mode === 'Run' ? 0.15 : 0.12));
         onClose({
             id: Date.now().toString(),
             date: new Date().toISOString(),
             type: mode,
-            durationSeconds: seconds,
+            durationSeconds: totalTimeElapsed,
             caloriesBurned: calories,
             category: workout?.category || 'Freestyle'
         });
     };
 
-    const handleGenerateHologram = async () => {
-        if (!workout) return;
-        setLoadingAi(true);
-        // Removed click sound here as per request to reduce sound clutter
-        const img = await generateWorkoutVisualization(workout.title);
-        setAiImage(img);
-        setLoadingAi(false);
+    const skipSegment = () => {
+        handleSegmentFinish();
     };
+
+    const currentSegment = segments[currentSegmentIndex];
+
+    if (status === 'initializing') {
+        return (
+            <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center p-6 animate-in fade-in">
+                <BrainCircuit className="text-neon-green animate-pulse mb-4" size={64} />
+                <h2 className="text-2xl font-bold text-white text-center">AI Coach is Structuring Session...</h2>
+                <p className="text-gray-400 text-sm mt-2">Analyzing {workout?.title}...</p>
+                <div className="w-48 h-1 bg-gray-800 rounded-full mt-8 overflow-hidden">
+                    <div className="h-full bg-neon-green animate-[loading_1s_ease-in-out_infinite] w-1/2"></div>
+                </div>
+            </div>
+        );
+    }
+
+    if (status === 'finished') {
+        return (
+            <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center p-6">
+                <Trophy size={80} className="text-neon-green mb-6 animate-bounce" />
+                <h1 className="text-4xl font-bold text-white mb-2">WORKOUT COMPLETE</h1>
+                <p className="text-gray-400 mb-8">You crushed it!</p>
+                <button onClick={handleFinish} className="bg-neon-green text-black font-bold py-4 px-12 rounded-full">
+                    Save Session
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 bg-black z-50 flex flex-col p-6 animate-in fade-in duration-300">
-             {/* Background Pulse */}
-            <div className={`absolute inset-0 bg-neon-green/5 ${isActive ? 'animate-pulse-slow' : ''} pointer-events-none`}></div>
+             {/* Background Pulse based on intensity */}
+            <div className={`absolute inset-0 ${currentSegment?.type === 'rest' ? 'bg-blue-900/10' : 'bg-neon-green/5'} pointer-events-none transition-colors duration-1000`}></div>
 
             {/* Header */}
-            <div className="flex justify-between items-center z-10 mb-8">
-                <div>
-                    <h2 className="text-sm text-neon-green font-bold uppercase tracking-widest">{mode} SESSION</h2>
-                    <h1 className="text-3xl font-bold text-white">{workout?.title || "Freestyle Run"}</h1>
+            <div className="flex justify-between items-center z-10 mb-4">
+                <div className="flex items-center gap-2">
+                    <button onClick={handleFinish} className="bg-white/10 p-2 rounded-full"><X size={20} /></button>
+                    <div>
+                        <h2 className="text-xs text-gray-400 uppercase tracking-widest">{mode === 'Workout' ? `Part ${currentSegmentIndex + 1}/${segments.length}` : 'FREESTYLE'}</h2>
+                        <h1 className="text-xl font-bold text-white">{workout?.title || "Run"}</h1>
+                    </div>
                 </div>
                 <div className="bg-white/10 px-3 py-1 rounded-full text-xs font-mono text-neon-blue border border-neon-blue/30 flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
+                    <div className={`w-2 h-2 rounded-full ${status === 'active' ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
                     LIVE
                 </div>
             </div>
 
-            {/* AI Visualization Area */}
+            {/* Mode: WORKOUT (AI Guided) */}
             {mode === 'Workout' && (
-                <div className="w-full aspect-video bg-black/50 rounded-2xl border border-white/10 mb-8 relative overflow-hidden group">
-                    {loadingAi ? (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center text-neon-green">
-                             <Loader2 className="animate-spin mb-2" />
-                             <span className="text-xs animate-pulse">GENERATING HOLOGRAM...</span>
-                        </div>
-                    ) : aiImage ? (
-                        <>
-                            <img src={aiImage} alt="AI Visual" className="w-full h-full object-cover opacity-80" />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
-                            <div className="absolute bottom-2 right-2 text-[10px] text-gray-500 bg-black/80 px-2 rounded">GEN AI RENDER</div>
-                        </>
-                    ) : (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <Activity className="text-gray-700 mb-4" size={48} />
-                            <button 
-                                onClick={handleGenerateHologram}
-                                className="bg-white/10 hover:bg-neon-green hover:text-black text-white px-4 py-2 rounded-full text-xs font-bold transition-all border border-white/20 flex items-center gap-2"
-                            >
-                                <Zap size={14} /> Visualize with Gemini 3D
-                            </button>
+                <div className="flex-grow flex flex-col z-10">
+                    
+                    {/* VISUALIZATION AREA */}
+                    <div className="relative w-full aspect-video bg-black/50 rounded-2xl border border-white/10 mb-6 overflow-hidden group">
+                         {currentSegment.type === 'rest' ? (
+                             <div className="absolute inset-0 flex flex-col items-center justify-center bg-blue-900/20">
+                                 <div className="text-neon-blue text-4xl font-bold animate-pulse">REST</div>
+                                 <p className="text-gray-300 text-sm mt-2">Breathe & Recover</p>
+                             </div>
+                         ) : (
+                             <>
+                                {generatingImage ? (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                        <Loader2 className="animate-spin text-neon-green mb-2" />
+                                        <span className="text-[10px] text-neon-green/70">GENERATING HOLOGRAM...</span>
+                                    </div>
+                                ) : currentImage ? (
+                                    <img src={currentImage} className="w-full h-full object-cover opacity-80 animate-in fade-in duration-1000" alt="Exercise" />
+                                ) : (
+                                    <div className="absolute inset-0 flex items-center justify-center text-gray-600"><Activity size={48} /></div>
+                                )}
+                                {/* Scanline effect */}
+                                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-neon-green/5 to-transparent h-[10%] w-full animate-[scan_3s_linear_infinite] pointer-events-none"></div>
+                             </>
+                         )}
+                         <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded text-[10px] text-gray-400">GEMINI AI 2.5</div>
+                    </div>
+
+                    {/* CURRENT EXERCISE CARD */}
+                    <div className="text-center mb-8">
+                        <h2 className="text-3xl font-bold text-white mb-1 transition-all duration-300">{currentSegment.name}</h2>
+                        {currentSegment.reps && <p className="text-neon-green font-mono text-lg">{currentSegment.reps}</p>}
+                        {currentSegment.notes && <p className="text-gray-500 text-xs mt-2 italic">"{currentSegment.notes}"</p>}
+                    </div>
+
+                    {/* TIMER */}
+                    <div className="flex-grow flex items-center justify-center relative">
+                         <div className="absolute inset-0 flex items-center justify-center">
+                             <div className={`w-64 h-64 rounded-full border-4 ${currentSegment.type === 'rest' ? 'border-blue-500/30' : 'border-neon-green/30'} animate-pulse`}></div>
+                         </div>
+                         <div className="text-center z-10">
+                             <span className={`text-8xl font-mono font-bold tracking-tighter ${currentSegment.type === 'rest' ? 'text-blue-400' : 'text-white'}`}>
+                                 {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                             </span>
+                         </div>
+                    </div>
+
+                    {/* CONTROLS */}
+                    <div className="grid grid-cols-3 gap-4 items-center mt-auto pb-4">
+                        <button onClick={() => setStatus(status === 'active' ? 'paused' : 'active')} className="bg-white/10 h-16 rounded-2xl flex items-center justify-center hover:bg-white/20">
+                            {status === 'active' ? <Pause /> : <Play />}
+                        </button>
+                        <button onClick={handleFinish} className="bg-red-500/20 h-16 rounded-2xl flex items-center justify-center text-red-500 hover:bg-red-500/30 border border-red-500/50">
+                            <StopCircle />
+                        </button>
+                        <button onClick={skipSegment} className="bg-neon-green/20 h-16 rounded-2xl flex items-center justify-center text-neon-green hover:bg-neon-green/30 border border-neon-green/50">
+                            <SkipForward />
+                        </button>
+                    </div>
+
+                    {/* NEXT UP PREVIEW */}
+                    {currentSegmentIndex + 1 < segments.length && (
+                        <div className="text-center pb-4 text-xs text-gray-500">
+                            Next: <span className="text-white">{segments[currentSegmentIndex + 1].name}</span>
                         </div>
                     )}
-                     {/* Scanning Effect Overlay */}
-                    {aiImage && <div className="absolute inset-0 bg-gradient-to-b from-transparent via-neon-green/10 to-transparent h-[10%] w-full animate-[scan_3s_linear_infinite] pointer-events-none"></div>}
                 </div>
             )}
 
-            {/* Timer Display */}
-            <div className="flex-grow flex flex-col items-center justify-center z-10">
-                <div className="relative mb-8">
-                     <svg className="w-64 h-64 transform -rotate-90">
-                        <circle cx="128" cy="128" r="120" stroke="#222" strokeWidth="8" fill="transparent" />
-                        <circle 
-                            cx="128" cy="128" r="120" 
-                            stroke={isActive ? "#ccff00" : "#555"} 
-                            strokeWidth="8" 
-                            fill="transparent" 
-                            strokeDasharray="753"
-                            strokeDashoffset={753 - ((seconds % 60) / 60) * 753}
-                            className="transition-all duration-1000 ease-linear"
-                        />
-                     </svg>
-                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-6xl font-mono font-bold text-white tracking-tighter">{formatTime(seconds)}</span>
-                        <span className="text-gray-500 text-sm uppercase mt-2 tracking-widest">Duration</span>
+            {/* Mode: RUN (Simple Timer) */}
+            {mode === 'Run' && (
+                <div className="flex-grow flex flex-col items-center justify-center">
+                     <Zap size={64} className="text-neon-blue mb-8 animate-pulse" />
+                     <div className="text-8xl font-mono font-bold text-white mb-4">
+                         {Math.floor(totalTimeElapsed / 60)}:{String(totalTimeElapsed % 60).padStart(2, '0')}
+                     </div>
+                     <p className="text-gray-400 uppercase tracking-widest mb-12">Total Time</p>
+                     
+                     <div className="grid grid-cols-2 gap-8 w-full max-w-xs text-center mb-12">
+                         <div className="bg-white/5 p-4 rounded-2xl">
+                             <div className="text-neon-blue font-bold text-2xl">{Math.floor(totalTimeElapsed * 0.15)}</div>
+                             <div className="text-[10px] text-gray-500 uppercase">Calories</div>
+                         </div>
+                         <div className="bg-white/5 p-4 rounded-2xl">
+                             <div className="text-purple-400 font-bold text-2xl">--</div>
+                             <div className="text-[10px] text-gray-500 uppercase">Heart Rate</div>
+                         </div>
+                     </div>
+
+                     <div className="flex gap-4">
+                        <button onClick={() => setStatus(status === 'active' ? 'paused' : 'active')} className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center">
+                            {status === 'active' ? <Pause /> : <Play />}
+                        </button>
+                        <button onClick={handleFinish} className="w-20 h-20 rounded-full bg-red-600 flex items-center justify-center">
+                            <StopCircle fill="white" />
+                        </button>
                      </div>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-8 w-full max-w-xs text-center">
-                    <div>
-                        <div className="text-neon-blue text-2xl font-bold">{Math.floor(seconds * (mode==='Run'?0.15:0.12))}</div>
-                        <div className="text-gray-500 text-xs uppercase">Calories</div>
-                    </div>
-                    <div>
-                         {/* Mock Heart Rate */}
-                        <div className="text-purple-500 text-2xl font-bold">{isActive ? 120 + Math.floor(Math.random()*10) : '--'}</div>
-                        <div className="text-gray-500 text-xs uppercase">BPM</div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center justify-center gap-6 z-10 pb-8">
-                <button 
-                    onClick={handleToggle}
-                    className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all"
-                >
-                    {isActive ? <Pause fill="currentColor" /> : <Play fill="currentColor" className="ml-1" />}
-                </button>
-                
-                <button 
-                    onClick={handleFinish}
-                    className="w-24 h-24 rounded-full bg-red-600 shadow-[0_0_30px_rgba(220,38,38,0.4)] flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-all"
-                >
-                    <StopCircle size={40} fill="currentColor" />
-                </button>
-            </div>
+            )}
         </div>
     );
 };
@@ -570,7 +665,7 @@ const App: React.FC = () => {
 const DashboardScreen: React.FC<{ 
   onNavigate: (s: Screen) => void, 
   user: UserProfile, 
-  streak: number,
+  streak: number, 
   todaysStats: { steps: number, calories: number, activeMinutes: number },
   onStartQuickWorkout: (type: string) => void,
   onEnablePedometer: () => void,

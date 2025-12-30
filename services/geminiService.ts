@@ -1,4 +1,5 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
+import { WorkoutSegment } from "../types";
 
 // Use the environment variable directly as required by guidelines
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -6,7 +7,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 export const generateMotivationalTip = async (): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash-latest',
       contents: "Give me a short, punchy, Gen-Z style fitness motivation quote. Max 15 words. No emojis in text.",
     });
     return response.text || "Level up your grind today.";
@@ -50,23 +51,70 @@ export const generateRunningCoachSpeech = async (text: string): Promise<AudioBuf
   }
 };
 
+export const generateWorkoutPlan = async (title: string, durationStr: string, difficulty: string): Promise<WorkoutSegment[]> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-latest',
+      contents: `Create a high-intensity interval workout plan for "${title}" (${difficulty}). 
+                 Duration: approx ${durationStr}.
+                 Return a JSON array of segments. 
+                 Alternating 'exercise' and 'rest'. 
+                 Keep exercise duration around 30-60s, rest 10-30s.
+                 Structure: Warmup -> Exercises -> Cooldown.
+                 Strict JSON format only.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              type: { type: Type.STRING, enum: ['exercise', 'rest'] },
+              duration: { type: Type.INTEGER, description: "Duration in seconds" },
+              reps: { type: Type.STRING, description: "e.g., '12 reps' or 'AMRAP'" },
+              notes: { type: Type.STRING, description: "Short tip form check" }
+            },
+            required: ['name', 'type', 'duration']
+          }
+        }
+      }
+    });
+
+    if (response.text) {
+      return JSON.parse(response.text);
+    }
+    return [];
+  } catch (e) {
+    console.error("Plan Gen Error", e);
+    // Fallback plan
+    return [
+      { name: "Jumping Jacks", type: "exercise", duration: 45, reps: "Warmup" },
+      { name: "Rest", type: "rest", duration: 15 },
+      { name: "Pushups", type: "exercise", duration: 45, reps: "15-20" },
+      { name: "Rest", type: "rest", duration: 15 },
+      { name: "Squats", type: "exercise", duration: 45, reps: "20" },
+      { name: "Rest", type: "rest", duration: 15 },
+      { name: "Burpees", type: "exercise", duration: 30, reps: "Max effort" },
+      { name: "Cooldown Stretch", type: "exercise", duration: 60, reps: "Hold" }
+    ];
+  }
+};
+
 export const generateWorkoutVisualization = async (exerciseName: string): Promise<string | null> => {
   try {
     // Using gemini-2.5-flash-image for generation
+    // Refined prompt to avoid safety filters and ensure "Gen Z" aesthetic
+    const prompt = `A futuristic neon green glowing wireframe hologram of a generic athletic humanoid figure performing the exercise: ${exerciseName}. 
+    Style: Cyberpunk interface, schematic 3D render, technical drawing, high contrast, minimalist. 
+    Background: Pure Black. 
+    No text, no realistic faces.`;
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [
-          {
-            text: `Generate a futuristic 3D wireframe hologram visualization of a fitness character doing ${exerciseName}. 
-                   Style: Cyberpunk, Neon Green and Black, schematic look, 3D render, high contrast. 
-                   Background: Pure Black.`
-          },
-        ],
+        parts: [{ text: prompt }],
       },
-      config: {
-        // Nano banana models do not support responseMimeType or tools like googleSearch
-      }
     });
 
     // Iterate to find image part
