@@ -50,6 +50,39 @@ export const generateRunningCoachSpeech = async (text: string): Promise<AudioBuf
   }
 };
 
+export const generateWorkoutVisualization = async (exerciseName: string): Promise<string | null> => {
+  try {
+    // Using gemini-2.5-flash-image for generation
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          {
+            text: `Generate a futuristic 3D wireframe hologram visualization of a fitness character doing ${exerciseName}. 
+                   Style: Cyberpunk, Neon Green and Black, schematic look, 3D render, high contrast. 
+                   Background: Pure Black.`
+          },
+        ],
+      },
+      config: {
+        // Nano banana models do not support responseMimeType or tools like googleSearch
+      }
+    });
+
+    // Iterate to find image part
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        const base64EncodeString: string = part.inlineData.data;
+        return `data:image/png;base64,${base64EncodeString}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Gemini Image Gen Error:", error);
+    return null;
+  }
+};
+
 // Helper for decoding base64
 function decode(base64: string) {
   const binaryString = atob(base64);
