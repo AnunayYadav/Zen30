@@ -2,12 +2,16 @@ import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { WorkoutSegment } from "../types";
 
 // Use the environment variable directly as required by guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Fallback to avoid immediate crash if key is missing during development
+const apiKey = process.env.API_KEY || "placeholder_key";
+const ai = new GoogleGenAI({ apiKey });
 
 export const generateMotivationalTip = async (): Promise<string> => {
   try {
+    if (apiKey === "placeholder_key") return "Add your API Key to .env to enable AI features.";
+    
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-latest',
+      model: 'gemini-3-flash-preview',
       contents: "Give me a short, punchy, Gen-Z style fitness motivation quote. Max 15 words. No emojis in text.",
     });
     return response.text || "Level up your grind today.";
@@ -19,6 +23,8 @@ export const generateMotivationalTip = async (): Promise<string> => {
 
 export const generateRunningCoachSpeech = async (text: string): Promise<AudioBuffer | null> => {
   try {
+    if (apiKey === "placeholder_key") return null;
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text }] }],
@@ -53,17 +59,17 @@ export const generateRunningCoachSpeech = async (text: string): Promise<AudioBuf
 
 export const generateWorkoutPlan = async (title: string, durationStr: string, difficulty: string): Promise<WorkoutSegment[]> => {
   try {
+    if (apiKey === "placeholder_key") throw new Error("Missing API Key");
+
+    // Optimized for speed: Short prompt, no thinking budget
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-latest',
-      contents: `Create a high-intensity interval workout plan for "${title}" (${difficulty}). 
-                 Duration: approx ${durationStr}.
-                 Return a JSON array of segments. 
-                 Alternating 'exercise' and 'rest'. 
-                 Keep exercise duration around 30-60s, rest 10-30s.
-                 Structure: Warmup -> Exercises -> Cooldown.
-                 Strict JSON format only.`,
+      model: 'gemini-3-flash-preview',
+      contents: `Create a concise HIIT workout for "${title}" (${difficulty}, ${durationStr}). 
+                 JSON Array only. Alternating 'exercise' (30-60s) and 'rest' (10-30s).
+                 No markdown.`,
       config: {
         responseMimeType: 'application/json',
+        thinkingConfig: { thinkingBudget: 0 }, // DISABLE THINKING FOR SPEED
         responseSchema: {
           type: Type.ARRAY,
           items: {
@@ -71,9 +77,9 @@ export const generateWorkoutPlan = async (title: string, durationStr: string, di
             properties: {
               name: { type: Type.STRING },
               type: { type: Type.STRING, enum: ['exercise', 'rest'] },
-              duration: { type: Type.INTEGER, description: "Duration in seconds" },
-              reps: { type: Type.STRING, description: "e.g., '12 reps' or 'AMRAP'" },
-              notes: { type: Type.STRING, description: "Short tip form check" }
+              duration: { type: Type.INTEGER },
+              reps: { type: Type.STRING },
+              notes: { type: Type.STRING }
             },
             required: ['name', 'type', 'duration']
           }
@@ -81,13 +87,12 @@ export const generateWorkoutPlan = async (title: string, durationStr: string, di
       }
     });
 
-    if (response.text) {
-      return JSON.parse(response.text);
-    }
-    return [];
+    let text = response.text || "[]";
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(text);
   } catch (e) {
     console.error("Plan Gen Error", e);
-    // Fallback plan
+    // Instant Fallback
     return [
       { name: "Jumping Jacks", type: "exercise", duration: 45, reps: "Warmup" },
       { name: "Rest", type: "rest", duration: 15 },
@@ -96,28 +101,31 @@ export const generateWorkoutPlan = async (title: string, durationStr: string, di
       { name: "Squats", type: "exercise", duration: 45, reps: "20" },
       { name: "Rest", type: "rest", duration: 15 },
       { name: "Burpees", type: "exercise", duration: 30, reps: "Max effort" },
-      { name: "Cooldown Stretch", type: "exercise", duration: 60, reps: "Hold" }
+      { name: "Cooldown", type: "exercise", duration: 60, reps: "Stretch" }
     ];
   }
 };
 
 export const generateWorkoutVisualization = async (exerciseName: string): Promise<string | null> => {
   try {
-    // Using gemini-2.5-flash-image for generation
-    // Refined prompt to avoid safety filters and ensure "Gen Z" aesthetic
-    const prompt = `A futuristic neon green glowing wireframe hologram of a generic athletic humanoid figure performing the exercise: ${exerciseName}. 
-    Style: Cyberpunk interface, schematic 3D render, technical drawing, high contrast, minimalist. 
-    Background: Pure Black. 
-    No text, no realistic faces.`;
+    if (apiKey === "placeholder_key") return null;
+
+    // gemini-2.5-flash-image supports aspect ratio config
+    // Using 16:9 to fit the wide mobile container without cropping
+    const prompt = `Futuristic neon green wireframe hologram of a fitness figure performing ${exerciseName}. Side view, minimalist schematic, black background.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
         parts: [{ text: prompt }],
       },
+      config: {
+        imageConfig: {
+            aspectRatio: "16:9" 
+        }
+      }
     });
 
-    // Iterate to find image part
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
         const base64EncodeString: string = part.inlineData.data;

@@ -1,14 +1,36 @@
-import { supabase } from './supabaseClient';
+import { supabase, isConfigured } from './supabaseClient';
 import { UserProfile, WorkoutSession, HabitLog, ChallengeState, WeightEntry } from '../types';
 import { PRODUCTION_URL } from './config';
 
 export const getTodayStr = () => new Date().toISOString().split('T')[0];
+
+// HELPER: Mock User for Offline Mode
+const DEMO_USER_KEY = 'zen30_demo_user';
+const getDemoUser = () => {
+  const u = localStorage.getItem(DEMO_USER_KEY);
+  return u ? JSON.parse(u) : null;
+};
+const setDemoUser = (user: any) => localStorage.setItem(DEMO_USER_KEY, JSON.stringify(user));
+
+// HELPER: Mock DB for Offline Mode
+const getLocalDB = <T>(key: string, defaultVal: T): T => {
+  const d = localStorage.getItem(key);
+  return d ? JSON.parse(d) : defaultVal;
+};
+const setLocalDB = (key: string, val: any) => localStorage.setItem(key, JSON.stringify(val));
 
 export const Storage = {
   // --- Auth & User Management ---
 
   // Listen for auth changes (used in App.tsx)
   onAuthStateChange: (callback: (session: any) => void) => {
+    if (!isConfigured) {
+      // OFFLINE MODE: Check for fake session
+      const user = getDemoUser();
+      setTimeout(() => callback(user ? { user } : null), 100); // Async simulation
+      return { data: { subscription: { unsubscribe: () => {} } } };
+    }
+
     return supabase.auth.onAuthStateChange((_event, session) => {
       callback(session);
     });
@@ -16,14 +38,16 @@ export const Storage = {
 
   // Login with Google OAuth
   loginGoogle: async () => {
-    // FIX: Redirecting to a specific path (like /auth/callback) causes a 404 
-    // because this is a Single Page App (SPA) without server-side routing.
-    // We must redirect to the ROOT domain. Supabase will append the token as a hash.
+    if (!isConfigured) {
+      // Mock Google Login
+      alert("Google Login requires valid API Keys. Logging in as Demo User.");
+      const user = { id: 'demo-google', email: 'demo@gmail.com', user_metadata: { full_name: 'Demo G-User' } };
+      setDemoUser(user);
+      window.location.reload(); // Reload to trigger auth state change in App
+      return;
+    }
     
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    
-    // IF PRODUCTION: Use https://zen30.vercel.app
-    // IF LOCAL: Use http://localhost:5173
     const redirectUrl = isLocal ? window.location.origin : PRODUCTION_URL;
 
     const { error } = await supabase.auth.signInWithOAuth({
@@ -39,6 +63,15 @@ export const Storage = {
   // Login with Email/Password
   loginEmail: async (email: string, password?: string) => {
     if (!password) throw new Error("Password required");
+    
+    if (!isConfigured) {
+      // Mock Email Login
+      const user = { id: 'demo-email', email, user_metadata: { full_name: 'Demo User' } };
+      setDemoUser(user);
+      window.location.reload();
+      return user;
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -50,6 +83,15 @@ export const Storage = {
   // Signup with Email
   signupEmail: async (email: string, password?: string, name?: string) => {
     if (!password) throw new Error("Password required");
+
+    if (!isConfigured) {
+      // Mock Signup
+      const user = { id: 'demo-email', email, user_metadata: { full_name: name || 'Demo User' } };
+      setDemoUser(user);
+      window.location.reload();
+      return user;
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -62,6 +104,11 @@ export const Storage = {
   },
 
   logout: async () => {
+    if (!isConfigured) {
+      localStorage.removeItem(DEMO_USER_KEY);
+      window.location.reload();
+      return;
+    }
     await supabase.auth.signOut();
     localStorage.clear(); // Clear local cache
   },
@@ -69,7 +116,10 @@ export const Storage = {
   // --- Profile Data ---
 
   getUserProfile: async (userId: string): Promise<UserProfile | null> => {
-    // Try fetch from 'profiles' table
+    if (!isConfigured) {
+      return getLocalDB<UserProfile | null>('zen30_profile', null);
+    }
+
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -82,7 +132,6 @@ export const Storage = {
     }
 
     if (data) {
-      // Map DB snake_case to app camelCase if necessary, assuming 1:1 for now or utilizing jsonb
       return {
         id: data.id,
         name: data.name || 'User',
@@ -104,6 +153,14 @@ export const Storage = {
 
   // Create or Update Profile
   upsertProfile: async (user: Partial<UserProfile>) => {
+    if (!isConfigured) {
+      // Merge with existing profile
+      const current = getLocalDB('zen30_profile', {}) as UserProfile;
+      const updated = { ...current, ...user };
+      setLocalDB('zen30_profile', updated);
+      return;
+    }
+
     const session = await supabase.auth.getSession();
     const userId = session.data.session?.user?.id;
     if (!userId) return;
@@ -139,6 +196,10 @@ export const Storage = {
   // --- History (Workouts) ---
   
   getHistory: async (): Promise<WorkoutSession[]> => {
+    if (!isConfigured) {
+      return getLocalDB<WorkoutSession[]>('zen30_history', []);
+    }
+
     const { data, error } = await supabase
       .from('workout_sessions')
       .select('*')
@@ -149,7 +210,6 @@ export const Storage = {
       return [];
     }
     
-    // Map snake_case to camelCase
     return (data || []).map((d: any) => ({
       id: d.id,
       date: d.date,
@@ -162,6 +222,13 @@ export const Storage = {
   },
 
   saveSession: async (session: WorkoutSession) => {
+    if (!isConfigured) {
+      const history = getLocalDB<WorkoutSession[]>('zen30_history', []);
+      history.push(session);
+      setLocalDB('zen30_history', history);
+      return history;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
@@ -178,13 +245,14 @@ export const Storage = {
     const { error } = await supabase.from('workout_sessions').insert(dbPayload);
     if (error) console.error("Error saving session:", error);
 
-    // Return updated history
     return await Storage.getHistory();
   },
 
   // --- Habits ---
 
   getHabits: async (): Promise<HabitLog> => {
+    if (!isConfigured) return getLocalDB<HabitLog>('zen30_habits', {});
+
     const { data, error } = await supabase
       .from('habits')
       .select('*');
@@ -194,22 +262,28 @@ export const Storage = {
       return {};
     }
 
-    // Convert flat DB rows back to nested HabitLog object
     const log: HabitLog = {};
     data?.forEach((row: any) => {
       if (!log[row.date]) log[row.date] = {};
-      log[row.date][row.habit_id] = row.value; // value can be boolean or number
+      log[row.date][row.habit_id] = row.value;
     });
     return log;
   },
 
   saveHabitValue: async (habitId: string, value: number | boolean) => {
+    const date = getTodayStr();
+
+    if (!isConfigured) {
+      const habits = getLocalDB<HabitLog>('zen30_habits', {});
+      if (!habits[date]) habits[date] = {};
+      habits[date][habitId] = value;
+      setLocalDB('zen30_habits', habits);
+      return habits;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return {};
 
-    const date = getTodayStr();
-
-    // Upsert habit row
     const { error } = await supabase
       .from('habits')
       .upsert({
@@ -227,6 +301,8 @@ export const Storage = {
   // --- Challenge ---
 
   getChallenge: async (): Promise<ChallengeState | null> => {
+    if (!isConfigured) return getLocalDB<ChallengeState | null>('zen30_challenge', null);
+
     const { data, error } = await supabase
       .from('challenges')
       .select('*')
@@ -242,10 +318,16 @@ export const Storage = {
   },
 
   initChallenge: async (startDate?: string) => {
+    const start = startDate || new Date().toISOString();
+
+    if (!isConfigured) {
+      const newState = { startDate: start, completedDays: [] };
+      setLocalDB('zen30_challenge', newState);
+      return newState;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { startDate: '', completedDays: [] };
-
-    const start = startDate || new Date().toISOString();
     
     const { error } = await supabase
       .from('challenges')
@@ -260,23 +342,31 @@ export const Storage = {
   },
 
   completeChallengeDay: async (day: number) => {
-    // First get current state
     const current = await Storage.getChallenge();
-    const { data: { user } } = await supabase.auth.getUser();
     
-    if (!current || !user) return await Storage.initChallenge();
+    if (!current) {
+      // Init if not exists
+      return await Storage.initChallenge();
+    }
 
     if (!current.completedDays.includes(day)) {
       const newDays = [...current.completedDays, day];
-      
-      const { error } = await supabase
-        .from('challenges')
-        .update({ completed_days: newDays })
-        .eq('user_id', user.id);
+      const newState = { ...current, completedDays: newDays };
 
-      if (error) console.error("Error updating challenge:", error);
-      
-      return { ...current, completedDays: newDays };
+      if (!isConfigured) {
+        setLocalDB('zen30_challenge', newState);
+        return newState;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error } = await supabase
+          .from('challenges')
+          .update({ completed_days: newDays })
+          .eq('user_id', user.id);
+        if (error) console.error("Error updating challenge:", error);
+      }
+      return newState;
     }
     
     return current;
@@ -285,6 +375,11 @@ export const Storage = {
   // --- Passive Steps ---
   getPassiveSteps: async (): Promise<number> => {
     const today = getTodayStr();
+    if (!isConfigured) {
+      const stepsLog = getLocalDB<Record<string, number>>('zen30_steps', {});
+      return stepsLog[today] || 0;
+    }
+
     const { data } = await supabase
       .from('daily_steps')
       .select('steps')
@@ -295,9 +390,16 @@ export const Storage = {
   },
 
   savePassiveSteps: async (steps: number) => {
+    const today = getTodayStr();
+    if (!isConfigured) {
+       const stepsLog = getLocalDB<Record<string, number>>('zen30_steps', {});
+       stepsLog[today] = steps;
+       setLocalDB('zen30_steps', stepsLog);
+       return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const today = getTodayStr();
 
     await supabase.from('daily_steps').upsert({
       user_id: user.id,

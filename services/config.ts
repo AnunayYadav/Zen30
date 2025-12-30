@@ -1,26 +1,18 @@
 // --- CONFIGURATION ---
 
-// Supabase Configuration (Hardcoded as requested)
+// Direct access to environment variables
+// We use 'as any' to bypass strict TypeScript checks on import.meta in some environments
+const env = (import.meta as any).env || {};
+
 export const SUPABASE_CONFIG = {
-  url: "https://bbmhrappdhaungpyjkgd.supabase.co",
-  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibWhyYXBwZGhhdW5ncHlqa2dkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwODM2NjMsImV4cCI6MjA4MjY1OTY2M30.cuClGjUp9QNivkNpC35cT4eRbnS1nIE4wIq3LH_lR_Y"
+  url: env.VITE_SUPABASE_URL,
+  anonKey: env.VITE_SUPABASE_ANON_KEY
 };
 
-// IMPORTANT: Replace this with your actual deployed URL (e.g. https://zen30.vercel.app)
-// This is required for mobile redirects to work properly.
 export const PRODUCTION_URL = "https://zen30.vercel.app"; 
 
-// Gemini API Key - Safely check environment without crashing
-const getApiKey = () => {
-  try {
-    // @ts-ignore
-    if (typeof process !== 'undefined' && process.env?.API_KEY) return process.env.API_KEY;
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) return import.meta.env.VITE_API_KEY;
-    return "";
-  } catch (e) {
-    return "";
-  }
-};
-
-export const GEMINI_API_KEY = getApiKey();
+// Gemini API Key handling
+// The vite.config.ts defines process.env.API_KEY, so we access it safely here.
+export const GEMINI_API_KEY = (typeof process !== 'undefined' && process.env && process.env.API_KEY) 
+  ? process.env.API_KEY 
+  : "";

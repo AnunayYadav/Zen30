@@ -146,11 +146,16 @@ const ActiveSessionScreen: React.FC<{
     onClose: (session: WorkoutSession | null) => void 
 }> = ({ mode, workout, onClose }) => {
     // Session State
-    const [status, setStatus] = useState<'initializing' | 'active' | 'paused' | 'finished'>('initializing');
-    const [segments, setSegments] = useState<WorkoutSegment[]>([]);
+    // Start ACTIVE immediately with a placeholder segment for responsiveness
+    // Increased initial duration to 12s to allow API more time without looping
+    const [status, setStatus] = useState<'active' | 'paused' | 'finished'>('active');
+    const [segments, setSegments] = useState<WorkoutSegment[]>([
+        { name: "Get Ready", type: "rest", duration: 12, reps: "Prepare yourself", notes: "AI Coach is generating your plan..." }
+    ]);
     const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
-    const [timeLeft, setTimeLeft] = useState(0);
+    const [timeLeft, setTimeLeft] = useState(12);
     const [totalTimeElapsed, setTotalTimeElapsed] = useState(0);
+    const [planLoaded, setPlanLoaded] = useState(false);
 
     // AI Visualization
     const [currentImage, setCurrentImage] = useState<string | null>(null);
@@ -160,20 +165,34 @@ const ActiveSessionScreen: React.FC<{
     useEffect(() => {
         const initSession = async () => {
             if (mode === 'Workout' && workout) {
-                // Generate Intelligent Plan
-                const plan = await generateWorkoutPlan(workout.title, workout.duration, workout.difficulty);
-                setSegments(plan);
-                if (plan.length > 0) {
-                    setTimeLeft(plan[0].duration);
-                    setStatus('active');
-                    SoundService.playStart();
-                    // Generate first image
-                    fetchImage(plan[0].name);
+                // Optimistic Start: Don't wait for plan
+                SoundService.playStart();
+                
+                try {
+                    const plan = await generateWorkoutPlan(workout.title, workout.duration, workout.difficulty);
+                    if (plan && plan.length > 0) {
+                        // Append generated plan to the "Get Ready" segment
+                        setSegments(prev => {
+                            const [first, ...rest] = prev;
+                            return [first, ...plan];
+                        });
+                        setPlanLoaded(true);
+                        // Pre-fetch first image immediately
+                        fetchImage(plan[0].name);
+                    } else {
+                        throw new Error("Empty plan");
+                    }
+                } catch (e) {
+                    console.error("Session Init Error", e);
+                    // Fallback
+                    const fallback: WorkoutSegment[] = [{ name: workout.title, type: 'exercise', duration: 1800, reps: 'Freestyle' }];
+                    setSegments(prev => [prev[0], ...fallback]);
+                    setPlanLoaded(true);
                 }
             } else {
                 // Simple run mode (no segments)
-                setStatus('active');
                 SoundService.playStart();
+                setPlanLoaded(true);
             }
         };
         initSession();
@@ -188,7 +207,7 @@ const ActiveSessionScreen: React.FC<{
 
     // Timer Logic
     useEffect(() => {
-        let interval: NodeJS.Timeout;
+        let interval: ReturnType<typeof setInterval>;
 
         if (status === 'active') {
             interval = setInterval(() => {
@@ -209,9 +228,15 @@ const ActiveSessionScreen: React.FC<{
         }
 
         return () => clearInterval(interval);
-    }, [status, mode, segments, currentSegmentIndex]);
+    }, [status, mode, segments, currentSegmentIndex, planLoaded]);
 
     const handleSegmentFinish = () => {
+        // If plan hasn't loaded yet and we finished "Get Ready", extend it longer to avoid rapid looping
+        if (!planLoaded && currentSegmentIndex === 0) {
+            setTimeLeft(5); // Extend by 5s
+            return;
+        }
+
         const nextIndex = currentSegmentIndex + 1;
         if (nextIndex < segments.length) {
             // Move to next segment
@@ -250,20 +275,10 @@ const ActiveSessionScreen: React.FC<{
         handleSegmentFinish();
     };
 
-    const currentSegment = segments[currentSegmentIndex];
-
-    if (status === 'initializing') {
-        return (
-            <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center p-6 animate-in fade-in">
-                <BrainCircuit className="text-neon-green animate-pulse mb-4" size={64} />
-                <h2 className="text-2xl font-bold text-white text-center">AI Coach is Structuring Session...</h2>
-                <p className="text-gray-400 text-sm mt-2">Analyzing {workout?.title}...</p>
-                <div className="w-48 h-1 bg-gray-800 rounded-full mt-8 overflow-hidden">
-                    <div className="h-full bg-neon-green animate-[loading_1s_ease-in-out_infinite] w-1/2"></div>
-                </div>
-            </div>
-        );
-    }
+    // Safe access to current segment
+    const currentSegment = segments[currentSegmentIndex] || { name: 'Loading...', type: 'rest', duration: 0 };
+    const maxDuration = currentSegment.duration || 60; // Prevent div by zero
+    const progress = Math.max(0, Math.min(1, 1 - (timeLeft / maxDuration)));
 
     if (status === 'finished') {
         return (
@@ -279,35 +294,35 @@ const ActiveSessionScreen: React.FC<{
     }
 
     return (
-        <div className="fixed inset-0 bg-black z-50 flex flex-col p-6 animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-black z-50 flex flex-col p-4 sm:p-6 animate-in fade-in duration-300 overflow-hidden h-[100dvh]">
              {/* Background Pulse based on intensity */}
             <div className={`absolute inset-0 ${currentSegment?.type === 'rest' ? 'bg-blue-900/10' : 'bg-neon-green/5'} pointer-events-none transition-colors duration-1000`}></div>
 
-            {/* Header */}
-            <div className="flex justify-between items-center z-10 mb-4">
+            {/* Header - Compact */}
+            <div className="flex justify-between items-center z-10 mb-2 shrink-0 h-10">
                 <div className="flex items-center gap-2">
-                    <button onClick={handleFinish} className="bg-white/10 p-2 rounded-full"><X size={20} /></button>
+                    <button onClick={handleFinish} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors"><X size={18} /></button>
                     <div>
-                        <h2 className="text-xs text-gray-400 uppercase tracking-widest">{mode === 'Workout' ? `Part ${currentSegmentIndex + 1}/${segments.length}` : 'FREESTYLE'}</h2>
-                        <h1 className="text-xl font-bold text-white">{workout?.title || "Run"}</h1>
+                        <h2 className="text-[10px] text-gray-400 uppercase tracking-widest leading-none">{mode === 'Workout' ? `Part ${currentSegmentIndex + 1}/${segments.length}` : 'FREESTYLE'}</h2>
+                        <h1 className="text-sm font-bold text-white truncate max-w-[150px] leading-tight">{workout?.title || "Run"}</h1>
                     </div>
                 </div>
-                <div className="bg-white/10 px-3 py-1 rounded-full text-xs font-mono text-neon-blue border border-neon-blue/30 flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${status === 'active' ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
+                <div className="bg-white/10 px-2 py-1 rounded-full text-[10px] font-mono text-neon-blue border border-neon-blue/30 flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${status === 'active' ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
                     LIVE
                 </div>
             </div>
 
             {/* Mode: WORKOUT (AI Guided) */}
             {mode === 'Workout' && (
-                <div className="flex-grow flex flex-col z-10">
+                <div className="flex-grow flex flex-col z-10 h-full overflow-hidden relative">
                     
-                    {/* VISUALIZATION AREA */}
-                    <div className="relative w-full aspect-video bg-black/50 rounded-2xl border border-white/10 mb-6 overflow-hidden group">
+                    {/* VISUALIZATION AREA - Responsive Height - Fixed image clipping with object-contain */}
+                    <div className="relative w-full h-40 sm:h-64 bg-black rounded-2xl border border-white/10 mb-2 overflow-hidden group shrink-0 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
                          {currentSegment.type === 'rest' ? (
                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-blue-900/20">
-                                 <div className="text-neon-blue text-4xl font-bold animate-pulse">REST</div>
-                                 <p className="text-gray-300 text-sm mt-2">Breathe & Recover</p>
+                                 <div className="text-neon-blue text-3xl font-bold animate-pulse">REST</div>
+                                 <p className="text-gray-300 text-xs mt-2">Breathe & Recover</p>
                              </div>
                          ) : (
                              <>
@@ -317,7 +332,9 @@ const ActiveSessionScreen: React.FC<{
                                         <span className="text-[10px] text-neon-green/70">GENERATING HOLOGRAM...</span>
                                     </div>
                                 ) : currentImage ? (
-                                    <img src={currentImage} className="w-full h-full object-cover opacity-80 animate-in fade-in duration-1000" alt="Exercise" />
+                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-black via-gray-900/20 to-black">
+                                        <img src={currentImage} className="w-full h-full object-contain opacity-90 animate-in fade-in duration-1000" alt="Exercise" />
+                                    </div>
                                 ) : (
                                     <div className="absolute inset-0 flex items-center justify-center text-gray-600"><Activity size={48} /></div>
                                 )}
@@ -325,45 +342,74 @@ const ActiveSessionScreen: React.FC<{
                                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-neon-green/5 to-transparent h-[10%] w-full animate-[scan_3s_linear_infinite] pointer-events-none"></div>
                              </>
                          )}
-                         <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded text-[10px] text-gray-400">GEMINI AI 2.5</div>
+                         <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-0.5 rounded text-[8px] text-gray-400">GEMINI AI 2.5</div>
                     </div>
 
-                    {/* CURRENT EXERCISE CARD */}
-                    <div className="text-center mb-8">
-                        <h2 className="text-3xl font-bold text-white mb-1 transition-all duration-300">{currentSegment.name}</h2>
-                        {currentSegment.reps && <p className="text-neon-green font-mono text-lg">{currentSegment.reps}</p>}
-                        {currentSegment.notes && <p className="text-gray-500 text-xs mt-2 italic">"{currentSegment.notes}"</p>}
+                    {/* CURRENT EXERCISE INFO - Shrinkable */}
+                    <div className="text-center mb-2 shrink-0 min-h-[50px] flex flex-col justify-center">
+                        <h2 className="text-xl sm:text-3xl font-bold text-white transition-all duration-300 leading-tight">{currentSegment.name}</h2>
+                        {currentSegment.reps && <p className="text-neon-green font-mono text-sm sm:text-base">{currentSegment.reps}</p>}
+                        {currentSegment.notes && <p className="text-gray-500 text-[10px] italic mt-1 max-w-[80%] mx-auto">{currentSegment.notes}</p>}
                     </div>
 
-                    {/* TIMER */}
-                    <div className="flex-grow flex items-center justify-center relative">
-                         <div className="absolute inset-0 flex items-center justify-center">
-                             <div className={`w-64 h-64 rounded-full border-4 ${currentSegment.type === 'rest' ? 'border-blue-500/30' : 'border-neon-green/30'} animate-pulse`}></div>
+                    {/* TIMER WITH SVG RING - Flex Grow but constrained */}
+                    <div className="flex-1 flex items-center justify-center relative min-h-[140px]">
+                         <div className="relative w-56 h-56 sm:w-64 sm:h-64 flex items-center justify-center">
+                             {/* SVG Progress Ring */}
+                             <svg className="w-full h-full transform -rotate-90">
+                                <circle cx="50%" cy="50%" r="45%" stroke="#1a1a1a" strokeWidth="8" fill="transparent" />
+                                <circle 
+                                    cx="50%" cy="50%" r="45%" 
+                                    stroke={currentSegment.type === 'rest' ? '#60a5fa' : '#ccff00'} 
+                                    strokeWidth="8" 
+                                    fill="transparent" 
+                                    strokeDasharray="283%" 
+                                />
+                             </svg>
+                             {/* Re-implementing SVG with ViewBox for responsiveness */}
+                             <svg className="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 256 256">
+                                <circle cx="128" cy="128" r="110" stroke="#1a1a1a" strokeWidth="12" fill="transparent" />
+                                <circle 
+                                    cx="128" cy="128" r="110" 
+                                    stroke={currentSegment.type === 'rest' ? '#60a5fa' : '#ccff00'} 
+                                    strokeWidth="12" 
+                                    fill="transparent" 
+                                    strokeDasharray="691" 
+                                    strokeDashoffset={691 * progress}
+                                    strokeLinecap="round"
+                                    className="transition-all duration-1000 ease-linear"
+                                />
+                             </svg>
+
+                             {/* Timer Text */}
+                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                 <span className={`text-6xl sm:text-7xl font-mono font-bold tracking-tighter ${currentSegment.type === 'rest' ? 'text-blue-400' : 'text-white'}`}>
+                                     {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                                 </span>
+                                 <span className="text-gray-500 text-[10px] uppercase mt-2 tracking-widest animate-pulse">
+                                     {!planLoaded ? "ANALYZING..." : "REMAINING"}
+                                 </span>
+                             </div>
                          </div>
-                         <div className="text-center z-10">
-                             <span className={`text-8xl font-mono font-bold tracking-tighter ${currentSegment.type === 'rest' ? 'text-blue-400' : 'text-white'}`}>
-                                 {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-                             </span>
-                         </div>
                     </div>
 
-                    {/* CONTROLS */}
-                    <div className="grid grid-cols-3 gap-4 items-center mt-auto pb-4">
-                        <button onClick={() => setStatus(status === 'active' ? 'paused' : 'active')} className="bg-white/10 h-16 rounded-2xl flex items-center justify-center hover:bg-white/20">
+                    {/* CONTROLS - Fixed Bottom */}
+                    <div className="grid grid-cols-3 gap-4 items-center mt-2 shrink-0 pb-4 sm:pb-0">
+                        <button onClick={() => setStatus(status === 'active' ? 'paused' : 'active')} className="bg-white/10 h-14 sm:h-16 rounded-2xl flex items-center justify-center hover:bg-white/20 transition-all active:scale-95">
                             {status === 'active' ? <Pause /> : <Play />}
                         </button>
-                        <button onClick={handleFinish} className="bg-red-500/20 h-16 rounded-2xl flex items-center justify-center text-red-500 hover:bg-red-500/30 border border-red-500/50">
+                        <button onClick={handleFinish} className="bg-red-500/20 h-14 sm:h-16 rounded-2xl flex items-center justify-center text-red-500 hover:bg-red-500/30 border border-red-500/50 transition-all active:scale-95">
                             <StopCircle />
                         </button>
-                        <button onClick={skipSegment} className="bg-neon-green/20 h-16 rounded-2xl flex items-center justify-center text-neon-green hover:bg-neon-green/30 border border-neon-green/50">
+                        <button onClick={skipSegment} className="bg-neon-green/20 h-14 sm:h-16 rounded-2xl flex items-center justify-center text-neon-green hover:bg-neon-green/30 border border-neon-green/50 transition-all active:scale-95">
                             <SkipForward />
                         </button>
                     </div>
 
-                    {/* NEXT UP PREVIEW */}
+                    {/* NEXT UP PREVIEW - Bottom */}
                     {currentSegmentIndex + 1 < segments.length && (
-                        <div className="text-center pb-4 text-xs text-gray-500">
-                            Next: <span className="text-white">{segments[currentSegmentIndex + 1].name}</span>
+                        <div className="text-center py-2 text-[10px] text-gray-500 truncate h-6">
+                            Next: <span className="text-white font-medium">{segments[currentSegmentIndex + 1].name}</span>
                         </div>
                     )}
                 </div>
@@ -655,19 +701,12 @@ const App: React.FC = () => {
 
 // --- Sub-Components (Restored and updated) ---
 
-// (Reusing existing sub-components but updating specific button handlers in App main logic)
-// To keep file size manageable and avoid repetition, I am declaring them here briefly if they needed internal state changes, 
-// but primarily the logic is handled in the App component's renderContent function and props.
-
-// ... [DashboardScreen, WorkoutSelectionScreen, ChallengeScreen, HabitTrackerScreen, ProgressScreen] ...
-// I will include them fully below to ensure the file is complete and valid.
-
 const DashboardScreen: React.FC<{ 
   onNavigate: (s: Screen) => void, 
   user: UserProfile, 
   streak: number, 
   todaysStats: { steps: number, calories: number, activeMinutes: number },
-  onStartQuickWorkout: (type: string) => void,
+  onStartQuickWorkout: (type: string) => void, 
   onEnablePedometer: () => void,
   pedometerActive: boolean
 }> = ({ onNavigate, user, streak, todaysStats, onStartQuickWorkout, onEnablePedometer, pedometerActive }) => {

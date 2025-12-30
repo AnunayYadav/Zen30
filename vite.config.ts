@@ -2,17 +2,19 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
-  // Load env from local .env files (if any)
-  // Fix: Property 'cwd' does not exist on type 'Process' - casting to any to access Node.js process methods
-  const localEnv = loadEnv(mode, (process as any).cwd(), '');
-  const env = { ...process.env, ...localEnv };
+  // Load env file based on `mode` in the current working directory.
+  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
+  const env = loadEnv(mode, (process as any).cwd(), '');
 
   return {
     plugins: [react()],
     define: {
-      // Only exposing API_KEY for Gemini. Supabase keys are now hardcoded in config.ts.
+      // We explicitly define process.env.API_KEY to satisfy the @google/genai SDK requirement
+      // and prevent it from crashing in a browser environment.
       'process.env.API_KEY': JSON.stringify(env.API_KEY || ""),
-      'process.env.VITE_API_KEY': JSON.stringify(env.VITE_API_KEY || ""),
+      
+      // If you have other specific non-VITE_ prefixed vars to expose, add them here.
+      // VITE_ prefixed variables (like VITE_SUPABASE_URL) are automatically exposed on import.meta.env
     },
   };
 });
