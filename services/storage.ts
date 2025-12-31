@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { UserProfile, WorkoutSession, HabitLog, ChallengeState, ChallengeTask } from '../types';
+import { UserProfile, WorkoutSession, HabitLog, ChallengeState, ChallengeTask, ChallengeLog } from '../types';
 import { PRODUCTION_URL } from './config';
 
 export const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -228,9 +228,10 @@ export const Storage = {
     // 1. Fetch Cloud Progress
     const { data: cloudData } = await supabase.from('challenges').select('*').maybeSingle();
     
-    // 2. Fetch Local Plan (Since DB might not support JSON plan column)
+    // 2. Fetch Local Plan & Logs
     const localPlanStr = localStorage.getItem(`zen30_plan_${user.id}`);
     const localGoal = localStorage.getItem(`zen30_goal_${user.id}`);
+    const localLogsStr = localStorage.getItem(`zen30_logs_${user.id}`);
 
     if (!cloudData && !localPlanStr) return null;
 
@@ -238,7 +239,8 @@ export const Storage = {
       startDate: cloudData?.start_date || new Date().toISOString(),
       completedDays: cloudData?.completed_days || [],
       goal: localGoal || undefined,
-      plan: localPlanStr ? JSON.parse(localPlanStr) : undefined
+      plan: localPlanStr ? JSON.parse(localPlanStr) : undefined,
+      logs: localLogsStr ? JSON.parse(localLogsStr) : {}
     };
   },
 
@@ -250,6 +252,7 @@ export const Storage = {
     // Save plan locally
     localStorage.setItem(`zen30_plan_${user.id}`, JSON.stringify(plan));
     localStorage.setItem(`zen30_goal_${user.id}`, goal);
+    localStorage.setItem(`zen30_logs_${user.id}`, '{}');
 
     // Save progress start to cloud
     await supabase.from('challenges').upsert({
@@ -258,7 +261,7 @@ export const Storage = {
         completed_days: []
       });
       
-    return { startDate: start, completedDays: [], goal, plan };
+    return { startDate: start, completedDays: [], goal, plan, logs: {} };
   },
 
   updateChallengePlan: async (newPlan: ChallengeTask[]) => {
@@ -267,13 +270,24 @@ export const Storage = {
 
     localStorage.setItem(`zen30_plan_${user.id}`, JSON.stringify(newPlan));
     
-    // Return the refreshed state
+    return await Storage.getChallenge();
+  },
+
+  saveChallengeLog: async (day: number, log: ChallengeLog) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const currentLogsStr = localStorage.getItem(`zen30_logs_${user.id}`) || '{}';
+    const logs = JSON.parse(currentLogsStr);
+    logs[day] = log;
+    localStorage.setItem(`zen30_logs_${user.id}`, JSON.stringify(logs));
+
     return await Storage.getChallenge();
   },
 
   completeChallengeDay: async (day: number) => {
     const current = await Storage.getChallenge();
-    if (!current) return null; // Should not happen
+    if (!current) return null; 
 
     if (!current.completedDays.includes(day)) {
       const newDays = [...current.completedDays, day];
@@ -288,7 +302,6 @@ export const Storage = {
     return current;
   },
 
-  // Reset Progress ONLY (Keep plan)
   restartChallenge: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
@@ -299,16 +312,19 @@ export const Storage = {
         completed_days: []
     }).eq('user_id', user.id);
     
+    // Also clear logs
+    localStorage.setItem(`zen30_logs_${user.id}`, '{}');
+
     return await Storage.getChallenge();
   },
 
-  // Delete everything (Progress + Plan)
   resetChallenge: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if(user) {
       await supabase.from('challenges').delete().eq('user_id', user.id);
       localStorage.removeItem(`zen30_plan_${user.id}`);
       localStorage.removeItem(`zen30_goal_${user.id}`);
+      localStorage.removeItem(`zen30_logs_${user.id}`);
     }
     return null;
   },

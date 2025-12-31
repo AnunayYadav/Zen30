@@ -85,11 +85,17 @@ export interface ChallengeTask {
   instructions?: string[]; // Specific exercises for AI plan
 }
 
+export interface ChallengeLog {
+  notes: string;
+  checkedIndices: number[];
+}
+
 export interface ChallengeState {
   startDate: string; // ISO String of when challenge started
   completedDays: number[]; // Array of day numbers (1-30) completed
   goal?: string; // The user's prompt
   plan?: ChallengeTask[]; // The AI generated 30 day plan
+  logs?: Record<number, ChallengeLog>; // Daily progress logs
 }
 
 export interface WorkoutSegment {
