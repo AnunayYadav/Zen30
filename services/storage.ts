@@ -168,20 +168,13 @@ export const Storage = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // Delete all workout sessions
+    // Reset ONLY workout stats and daily steps
+    // Does NOT delete habits or challenges
     await supabase.from('workout_sessions').delete().eq('user_id', user.id);
-    // Delete habits logs
-    await supabase.from('habits').delete().eq('user_id', user.id);
-    // Delete daily steps
     await supabase.from('daily_steps').delete().eq('user_id', user.id);
     
-    // Reset profile stats
-    const update = {
-        streak: 0,
-        weight_history: [],
-        challenge_start_date: null
-    };
-    await supabase.from('profiles').update(update).eq('id', user.id);
+    // Reset streak only in profile
+    await supabase.from('profiles').update({ streak: 0 }).eq('id', user.id);
 
     // Refresh profile
     return await Storage.getUserProfile(user.id);
@@ -289,6 +282,7 @@ export const Storage = {
     const current = await Storage.getChallenge();
     if (!current) return null; 
 
+    // Add day if not present
     if (!current.completedDays.includes(day)) {
       const newDays = [...current.completedDays, day];
       const newState = { ...current, completedDays: newDays };
@@ -300,6 +294,22 @@ export const Storage = {
       return newState;
     }
     return current;
+  },
+
+  uncompleteChallengeDay: async (day: number) => {
+      const current = await Storage.getChallenge();
+      if (!current) return null;
+
+      if(current.completedDays.includes(day)) {
+          const newDays = current.completedDays.filter(d => d !== day);
+          const newState = { ...current, completedDays: newDays };
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await supabase.from('challenges').update({ completed_days: newDays }).eq('user_id', user.id);
+          }
+          return newState;
+      }
+      return current;
   },
 
   restartChallenge: async () => {

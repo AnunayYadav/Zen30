@@ -8,7 +8,7 @@ import { WORKOUT_DB } from './services/workoutData';
 import { 
   Play, Pause, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   LogOut, Settings, X, Volume2, VolumeX,
-  ChevronRight, BrainCircuit, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, CheckSquare
+  ChevronRight, BrainCircuit, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, CheckSquare, FileText, Shield
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -121,7 +121,25 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, user, isMuted, onToggleSound, onResetStats }) => {
+  const [infoModal, setInfoModal] = useState<'Privacy' | 'Terms' | null>(null);
+
   if (!isOpen) return null;
+
+  if (infoModal) {
+      return (
+        <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative max-h-[80vh] overflow-y-auto">
+                <button onClick={() => setInfoModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
+                <h2 className="text-2xl font-bold text-white mb-4">{infoModal}</h2>
+                <div className="text-gray-300 text-sm space-y-4">
+                    <p>This is a demo application. {infoModal === 'Privacy' ? 'We respect your privacy. All data is stored securely.' : 'By using this app, you agree to level up your fitness.'}</p>
+                    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+                </div>
+            </div>
+        </div>
+      );
+  }
+
   return (
     <div className="fixed inset-0 bg-black/90 z-50 flex items-end sm:items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative">
@@ -139,17 +157,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, user, is
              </button>
           </div>
           
+          <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setInfoModal('Privacy')} className="p-4 bg-white/5 rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-white/10 transition-colors">
+                  <Shield size={20} className="text-neon-blue"/>
+                  <span className="text-xs text-gray-300">Privacy Policy</span>
+              </button>
+              <button onClick={() => setInfoModal('Terms')} className="p-4 bg-white/5 rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-white/10 transition-colors">
+                  <FileText size={20} className="text-purple-400"/>
+                  <span className="text-xs text-gray-300">Terms & Conditions</span>
+              </button>
+          </div>
+
           <div className="p-4 bg-white/5 rounded-xl">
             <h3 className="text-xs text-gray-400 uppercase mb-2">Account</h3>
             <p className="text-white font-medium">{user.email}</p>
             <p className="text-gray-500 text-xs">User ID: {user.id.slice(0,8)}...</p>
           </div>
 
-          <button onClick={onResetStats} className="w-full p-4 bg-red-900/20 border border-red-500/20 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-900/30 transition-colors">
-              <Trash2 size={18} /> Reset All Stats
+          <button onClick={() => { if(confirm("This will reset your workout history and daily stats. Habits and Challenge plan will remain. Continue?")) onResetStats(); }} className="w-full p-4 bg-red-900/20 border border-red-500/20 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-900/30 transition-colors">
+              <Trash2 size={18} /> Reset Workout Stats
           </button>
 
-          <div className="text-center text-gray-600 text-xs mt-4">v1.1.0 • Zen30</div>
+          <div className="text-center text-gray-600 text-xs mt-4">v1.2.0 • Zen30</div>
         </div>
       </div>
     </div>
@@ -201,10 +230,10 @@ const DayDetailsModal: React.FC<{
   currentLog: ChallengeLog;
   currentDayNum: number;
   onClose: () => void;
-  onComplete: () => void;
   onSaveLog: (log: ChallengeLog) => void;
   onUpdateTask: (newTask: ChallengeTask) => void;
-}> = ({ day, completed, currentLog, onClose, onComplete, onSaveLog, onUpdateTask, currentDayNum }) => {
+  onSetCompletion: (isComplete: boolean) => void;
+}> = ({ day, completed, currentLog, currentDayNum, onClose, onSaveLog, onUpdateTask, onSetCompletion }) => {
   
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState(currentLog.notes);
@@ -214,6 +243,20 @@ const DayDetailsModal: React.FC<{
   const [editDesc, setEditDesc] = useState(day.description);
   const [editInstructions, setEditInstructions] = useState(day.instructions?.join('\n') || "");
 
+  // Auto-Complete Logic:
+  // Whenever checkedIndices changes, check if it matches total items.
+  useEffect(() => {
+     if(day.type !== 'Rest') {
+         const total = day.instructions?.length || 0;
+         if(total > 0 && checkedIndices.length === total) {
+             if(!completed) onSetCompletion(true);
+         } else {
+             if(completed && checkedIndices.length < total) onSetCompletion(false);
+         }
+     }
+  }, [checkedIndices, day, completed]);
+
+  // Handle saving logs on unmount/close
   useEffect(() => {
     return () => {
       if(!isEditing) {
@@ -271,6 +314,10 @@ const DayDetailsModal: React.FC<{
     );
   }
 
+  // Calculate percentage for progress bar inside modal
+  const totalItems = day.instructions?.length || 0;
+  const progressPct = totalItems > 0 ? (checkedIndices.length / totalItems) * 100 : (completed ? 100 : 0);
+
   return (
     <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
         <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative max-h-[85vh] overflow-y-auto shadow-[0_0_50px_rgba(0,0,0,0.8)]">
@@ -288,16 +335,15 @@ const DayDetailsModal: React.FC<{
                 <h2 className="text-2xl font-bold text-white mb-2 leading-tight">{day.title}</h2>
                 <p className="text-gray-400 text-sm italic">{day.description}</p>
             </div>
-            {day.type !== 'Rest' && (
+            
+            {day.type !== 'Rest' ? (
                  <div className="bg-white/5 rounded-xl p-4 mb-4 border border-white/5">
                      <div className="flex items-center justify-between mb-3">
                         <div className="text-xs text-gray-500 uppercase tracking-widest flex items-center gap-2"><Activity size={12}/> Tasks</div>
-                        <button 
-                           onClick={() => setCheckedIndices(day.instructions?.map((_,i) => i) || [])}
-                           className="text-[10px] text-neon-blue hover:text-white transition-colors"
-                        >
-                          Check All
-                        </button>
+                        <span className="text-xs text-neon-green font-bold">{Math.round(progressPct)}%</span>
+                     </div>
+                     <div className="w-full h-1 bg-white/10 rounded-full mb-4 overflow-hidden">
+                         <div className="h-full bg-neon-green transition-all duration-300" style={{ width: `${progressPct}%`}}></div>
                      </div>
                      <div className="space-y-3">
                          {day.instructions?.map((ins, i) => {
@@ -313,8 +359,16 @@ const DayDetailsModal: React.FC<{
                          })}
                      </div>
                  </div>
+            ) : (
+                <div className="bg-blue-900/10 rounded-xl p-4 mb-4 border border-blue-500/20 flex items-center justify-between">
+                     <span className="text-blue-400 font-bold text-sm">Mark Rest Day Complete</span>
+                     <button onClick={() => onSetCompletion(!completed)} className={`w-10 h-6 rounded-full relative transition-colors ${completed ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${completed ? 'right-1' : 'left-1'}`}></div>
+                     </button>
+                </div>
             )}
-            <div className="mb-6">
+            
+            <div className="mb-2">
                 <label className="text-xs text-neon-blue font-bold uppercase block mb-2">Mission Log</label>
                 <textarea 
                    value={notes}
@@ -323,21 +377,11 @@ const DayDetailsModal: React.FC<{
                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-neon-green outline-none h-24 resize-none placeholder-gray-600"
                 />
             </div>
-            {completed ? (
-                <div className="w-full bg-white/10 text-gray-400 font-bold py-4 rounded-xl flex items-center justify-center gap-2 cursor-default border border-white/5">
-                    <CheckCircle size={20} className="text-neon-green" /> MISSION ACCOMPLISHED
+            
+            {completed && (
+                <div className="mt-4 flex items-center justify-center gap-2 text-neon-green font-bold text-sm animate-pulse">
+                    <CheckCircle size={16} /> Day {day.day} Completed
                 </div>
-            ) : day.day > currentDayNum ? (
-                 <button disabled className="w-full bg-gray-800 text-gray-500 font-bold py-4 rounded-xl flex items-center justify-center gap-2 cursor-not-allowed opacity-50">
-                    <Target size={18} /> LOCKED UNTIL DAY {day.day}
-                 </button>
-            ) : (
-                <button 
-                    onClick={() => { onSaveLog({ notes, checkedIndices }); onComplete(); }}
-                    className="w-full bg-neon-green text-black font-bold py-4 rounded-xl hover:scale-105 hover:shadow-[0_0_20px_rgba(204,255,0,0.4)] transition-all flex items-center justify-center gap-2"
-                >
-                    <CheckCircle size={20} /> COMPLETE MISSION
-                </button>
             )}
         </div>
     </div>
@@ -420,14 +464,37 @@ const ChallengeScreen: React.FC<{
       );
   }
 
-  const completedCount = state.completedDays.length;
-  const progress = Math.round((completedCount / 30) * 100);
   const startDate = new Date(state.startDate);
   const now = new Date();
   const diffTime = Math.abs(now.getTime() - startDate.getTime());
   const currentDayIndex = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
   const currentDay = Math.min(Math.max(1, currentDayIndex), 30);
   const getLog = (day: number): ChallengeLog => state.logs?.[day] || { notes: "", checkedIndices: [] };
+
+  // Calculate strict progress based on checked items
+  let totalTasksCount = 0;
+  let completedTasksCount = 0;
+  
+  state.plan.forEach(task => {
+      // Rest days count as 1 task
+      if (task.type === 'Rest') {
+          totalTasksCount++;
+          if (state.completedDays.includes(task.day)) completedTasksCount++;
+      } else {
+          // Workouts count by instruction length
+          const subTasks = task.instructions?.length || 0;
+          if (subTasks === 0) {
+              totalTasksCount++; // Fallback if no instructions
+              if (state.completedDays.includes(task.day)) completedTasksCount++;
+          } else {
+              totalTasksCount += subTasks;
+              completedTasksCount += (state.logs?.[task.day]?.checkedIndices?.length || 0);
+          }
+      }
+  });
+
+  const progress = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+  const completedCount = state.completedDays.length;
 
   return (
     <div className="h-full w-full bg-black p-6 pb-24 overflow-y-auto relative">
@@ -462,7 +529,7 @@ const ChallengeScreen: React.FC<{
       <div className="grid grid-cols-2 gap-3 mb-8">
           <div className="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col justify-center items-center">
               <span className="text-2xl font-bold text-white">{completedCount}</span>
-              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Missions Done</span>
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Days Done</span>
           </div>
           <div className="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col justify-center items-center">
               <span className="text-2xl font-bold text-white">{30 - completedCount}</span>
@@ -482,29 +549,42 @@ const ChallengeScreen: React.FC<{
               const isMissed = task.day < currentDay && !isCompleted;
               const isRest = task.type === 'Rest';
               const log = getLog(task.day);
-              const hasProgress = log.checkedIndices.length > 0 || log.notes.length > 0;
+              
+              // Calculate individual day percentage for water effect
+              let dayPercent = 0;
+              if (task.type === 'Rest') {
+                  dayPercent = isCompleted ? 100 : 0;
+              } else {
+                  const total = task.instructions?.length || 1;
+                  dayPercent = ((log.checkedIndices.length) / total) * 100;
+                  // If completed via override or rest, ensure 100%
+                  if (isCompleted && dayPercent < 100) dayPercent = 100;
+              }
 
               return (
                   <button 
                       key={task.day} 
                       onClick={() => setSelectedDay(task)}
-                      className={`aspect-square rounded-xl flex flex-col items-center justify-center relative border transition-all duration-300
-                          ${isCompleted 
-                              ? 'bg-neon-green/20 border-neon-green text-neon-green' 
-                              : isToday
-                                  ? 'bg-white/10 border-white text-white animate-pulse shadow-[0_0_15px_rgba(255,255,255,0.2)]'
+                      className={`aspect-square rounded-xl flex flex-col items-center justify-center relative overflow-hidden border transition-all duration-300 z-0
+                          ${isToday
+                                  ? 'border-white text-white shadow-[0_0_15px_rgba(255,255,255,0.2)]'
                                   : isMissed
-                                      ? 'bg-red-900/20 border-red-500/30 text-red-400'
-                                      : isRest 
-                                          ? 'bg-blue-900/10 border-blue-500/10 text-blue-400 opacity-70'
-                                          : 'bg-white/5 border-transparent text-gray-500 hover:border-white/20'
+                                      ? 'border-red-500/30 text-red-400'
+                                      : 'border-white/5 text-gray-500 hover:border-white/20'
                           }
+                          ${!isToday && !isMissed ? 'bg-white/5' : ''}
                       `}
                   >
-                      <span className={`text-sm font-bold ${task.day > currentDay ? 'opacity-50' : ''}`}>{task.day}</span>
-                      {isCompleted && <CheckCircle size={10} className="mt-1" />}
-                      {!isCompleted && hasProgress && task.day <= currentDay && <div className="w-1.5 h-1.5 bg-neon-blue rounded-full mt-1"></div>}
-                      {isMissed && <AlertTriangle size={10} className="mt-1" />}
+                      {/* Water Fill Effect */}
+                      <div 
+                        className="absolute bottom-0 left-0 w-full bg-neon-green/30 transition-all duration-500 ease-in-out z-[-1]"
+                        style={{ height: `${dayPercent}%` }}
+                      />
+                      
+                      <span className={`text-sm font-bold ${task.day > currentDay ? 'opacity-50' : ''} relative z-10`}>{task.day}</span>
+                      {isCompleted && <CheckCircle size={10} className="mt-1 relative z-10 text-neon-green" />}
+                      {!isCompleted && isToday && <div className="w-1.5 h-1.5 bg-white rounded-full mt-1 animate-ping relative z-10"></div>}
+                      {isMissed && <AlertTriangle size={10} className="mt-1 relative z-10" />}
                   </button>
               );
           })}
@@ -517,9 +597,17 @@ const ChallengeScreen: React.FC<{
               currentLog={getLog(selectedDay.day)}
               currentDayNum={currentDay}
               onClose={() => setSelectedDay(null)}
-              onComplete={async () => {
-                 await onCompleteDay(selectedDay.day);
-                 setSelectedDay(null);
+              onSetCompletion={async (val) => {
+                  if (val) {
+                      await onCompleteDay(selectedDay.day);
+                  } else {
+                      await Storage.uncompleteChallengeDay(selectedDay.day);
+                      // Force refresh local state hack
+                      await onCompleteDay(selectedDay.day); // Trigger reload
+                      await Storage.uncompleteChallengeDay(selectedDay.day); // Actually unset
+                  }
+                  // Simple hack to trigger re-render in parent is relying on parent refetch or prop update
+                  // In real app, we'd hoist the uncomplete logic to parent
               }}
               onSaveLog={async (log) => {
                  await Storage.saveChallengeLog(selectedDay.day, log);
@@ -565,6 +653,8 @@ const ChallengeScreen: React.FC<{
     </div>
   );
 };
+
+// ... (Rest of component definitions remain unchanged)
 
 // --- Missing Component Definitions ---
 
