@@ -10,7 +10,7 @@ import { supabase } from './services/supabaseClient';
 import { 
   Play, Pause, StopCircle, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   User as UserIcon, LogOut, Settings, Share2, Camera, Lock, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, X, Volume2, VolumeX,
-  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus
+  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus, Image as ImageIcon, Upload
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
 
@@ -21,6 +21,15 @@ const DEFAULT_HABITS: Habit[] = [
   { id: 'h3', name: 'Fix Posture', icon: '🧘', type: 'toggle' },
   { id: 'h4', name: 'Skincare', icon: '✨', type: 'toggle' },
   { id: 'h5', name: '8h Sleep', icon: '😴', type: 'toggle' },
+];
+
+const AVATAR_PRESETS = [
+  "https://images.unsplash.com/photo-1594381898411-846e7d193883?w=400&h=400&fit=crop&q=80", // Athletic Woman
+  "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop&q=80", // Intense Man
+  "https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=400&h=400&fit=crop&q=80", // Blonde/Fitness
+  "https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=400&h=400&fit=crop&q=80", // Headphones Man
+  "https://images.unsplash.com/photo-1518310383802-640c2de311b2?w=400&h=400&fit=crop&q=80", // Ponytail Woman
+  "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&h=400&fit=crop&q=80", // Trainer Man
 ];
 
 // --- Sub-Components ---
@@ -148,6 +157,45 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, user, is
       </div>
     </div>
   );
+};
+
+const AvatarSelectionModal: React.FC<{ isOpen: boolean, onClose: () => void, onSelect: (url: string) => void, onUploadClick: () => void }> = ({ isOpen, onClose, onSelect, onUploadClick }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
+            <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative shadow-[0_0_50px_rgba(0,0,0,0.8)]">
+                <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
+                <h2 className="text-2xl font-bold text-white mb-2 text-center">Choose Avatar</h2>
+                <p className="text-gray-500 text-center text-xs mb-6">Pick a look or upload your own.</p>
+
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                    {AVATAR_PRESETS.map((url, idx) => (
+                        <button 
+                            key={idx} 
+                            onClick={() => onSelect(url)}
+                            className="aspect-square rounded-full overflow-hidden border-2 border-transparent hover:border-neon-green transition-all hover:scale-110 active:scale-95 group relative"
+                        >
+                            <img src={url} alt={`Avatar ${idx}`} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-neon-green/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-2 mb-4">
+                    <div className="h-px bg-white/10 flex-grow"></div>
+                    <span className="text-xs text-gray-500 uppercase">Or</span>
+                    <div className="h-px bg-white/10 flex-grow"></div>
+                </div>
+
+                <button 
+                    onClick={onUploadClick}
+                    className="w-full bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
+                >
+                    <Upload size={18} className="text-neon-blue" /> Upload Custom Photo
+                </button>
+            </div>
+        </div>
+    );
 };
 
 // --- Intelligent Active Session ---
@@ -1305,6 +1353,7 @@ const ProfileScreen: React.FC<{
     onOpenSettings: () => void, onShare: () => void
 }> = ({ user, history, streak, onLogout, onUpdateWeight, onUpdateImage, onOpenSettings, onShare }) => {
     
+    const [showAvatarModal, setShowAvatarModal] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1316,6 +1365,7 @@ const ProfileScreen: React.FC<{
                 // Basic check to avoid massive payload issues in local storage/demo
                 if(base64String.length < 500000) { 
                     onUpdateImage(base64String);
+                    setShowAvatarModal(false);
                 } else {
                     alert("Image too large. Please pick a smaller image.");
                 }
@@ -1332,28 +1382,36 @@ const ProfileScreen: React.FC<{
                      {user.profileImage ? <img src={user.profileImage} alt="Profile" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-neon-green text-3xl font-bold">{user.name.charAt(0)}</div>}
                      <div 
                         className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                        onClick={() => fileInputRef.current?.click()}
+                        onClick={() => setShowAvatarModal(true)}
                      >
                          <Camera size={20} className="text-white" />
                      </div>
-                     <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleImageUpload} 
-                        accept="image/*" 
-                        className="hidden" 
-                     />
                  </div>
                  <h2 className="text-2xl font-bold text-white">{user.name}</h2>
                  <p className="text-gray-500 text-sm">Joined {new Date(user.joinDate).toLocaleDateString()}</p>
                  <div className="mt-2 bg-neon-green/10 px-3 py-1 rounded text-neon-green text-xs font-bold uppercase tracking-widest border border-neon-green/20">{user.isPro ? 'Pro Member' : 'Free Plan'}</div>
              </div>
+
              <div className="space-y-4">
                  <div className="bg-white/5 rounded-xl p-4 flex items-center justify-between"><div className="flex items-center gap-3"><Monitor className="text-gray-400" size={20} /><span className="text-white">Weight</span></div><div className="flex items-center gap-2"><span className="text-2xl font-bold text-white">{user.weight}</span><span className="text-gray-500 text-sm">kg</span><button onClick={() => { const w = prompt("New Weight (kg):"); if(w) onUpdateWeight(parseFloat(w)); }} className="ml-2 bg-gray-800 p-1 rounded hover:bg-gray-700"><Edit2 size={14} className="text-neon-blue" /></button></div></div>
                  <div className="bg-white/5 rounded-xl p-4 flex items-center justify-between"><div className="flex items-center gap-3"><Flame className="text-orange-500" size={20} /><span className="text-white">Streak</span></div><span className="text-xl font-bold text-orange-500">{streak} Days</span></div>
                  <button onClick={onOpenSettings} className="w-full bg-white/5 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-colors"><div className="flex items-center gap-3"><Settings className="text-gray-400" size={20} /><span className="text-white">Settings</span></div><ChevronRight className="text-gray-600" size={20} /></button>
                  <button onClick={onShare} className="w-full bg-white/5 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-colors"><div className="flex items-center gap-3"><Share2 className="text-gray-400" size={20} /><span className="text-white">Share Stats</span></div><ChevronRight className="text-gray-600" size={20} /></button>
              </div>
+
+             <AvatarSelectionModal 
+                isOpen={showAvatarModal}
+                onClose={() => setShowAvatarModal(false)}
+                onSelect={(url) => { onUpdateImage(url); setShowAvatarModal(false); }}
+                onUploadClick={() => fileInputRef.current?.click()}
+             />
+             <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImageUpload} 
+                accept="image/*" 
+                className="hidden" 
+             />
         </div>
     );
 };
