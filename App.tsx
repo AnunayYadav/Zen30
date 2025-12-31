@@ -67,6 +67,7 @@ const AuthScreen: React.FC<{ onLoginSuccess: (user: UserProfile) => void }> = ({
     try {
       if (isLogin) await Storage.loginEmail(email, password);
       else await Storage.signupEmail(email, password, name);
+      // Success is handled by the global onAuthStateChange listener
     } catch (e: any) {
       setError(e.message);
       setLoading(false);
@@ -473,18 +474,17 @@ const App: React.FC = () => {
 
   // Auth Listener
   useEffect(() => {
-    // Basic hash handling to clean URL, no bounce logic
-    if (window.location.hash.includes('access_token')) {
-        window.history.replaceState({}, document.title, '/');
-    }
+    // Note: Manual hash cleaning has been removed to avoid conflicts with Supabase Auth handling.
 
     const { data: { subscription } } = Storage.onAuthStateChange(async (session) => {
       if (session) {
         setLoadingData(true);
         try {
           const userId = session.user.id;
+          // Attempt to fetch profile
           let profile = await Storage.getUserProfile(userId);
           
+          // If no profile found (e.g. new user or db error), try to create one or init default
           if (!profile) {
             const newProfile: Partial<UserProfile> = {
                 id: userId,
@@ -498,38 +498,77 @@ const App: React.FC = () => {
                 isPro: false,
                 onboardingComplete: true
             };
-            await Storage.upsertProfile(newProfile);
+            // Try to persist, but don't block if it fails (e.g. table missing)
+            try {
+               await Storage.upsertProfile(newProfile);
+            } catch (err) {
+               console.warn("Failed to persist new profile, using in-memory", err);
+            }
             profile = newProfile as UserProfile;
           }
 
           setUser(profile);
           
-          const [h, habitsLog, ch, steps] = await Promise.all([
-            Storage.getHistory(),
-            Storage.getHabits(),
-            Storage.getChallenge(),
-            Storage.getPassiveSteps()
-          ]);
+          // Fetch other data in parallel, gracefully handling failures
+          try {
+              const [h, habitsLog, ch, steps] = await Promise.all([
+                Storage.getHistory(),
+                Storage.getHabits(),
+                Storage.getChallenge(),
+                Storage.getPassiveSteps()
+              ]);
 
-          setHistory(h);
-          setHabits(habitsLog);
-          setChallenge(ch);
-          setPassiveSteps(steps);
+              setHistory(h);
+              setHabits(habitsLog);
+              setChallenge(ch);
+              setPassiveSteps(steps);
+          } catch (dataErr) {
+              console.warn("Partial data load failure", dataErr);
+              // Fallback default values
+              setHistory([]);
+              setHabits({});
+              setChallenge(null);
+              setPassiveSteps(0);
+          }
           
           setCurrentScreen(Screen.DASHBOARD);
         } catch (e) {
-          console.error("Data load error", e);
+          console.error("Critical Data load error", e);
+          // FALLBACK: Ensure user can still use app even if DB is down/missing
+          if (session?.user) {
+             const fallbackUser: UserProfile = {
+                 id: session.user.id,
+                 name: session.user.email?.split('@')[0] || 'User',
+                 email: session.user.email || '',
+                 joinDate: new Date().toISOString(),
+                 lastLoginDate: new Date().toISOString(),
+                 streak: 0,
+                 weight: 70, height: 175, weightHistory: [], isPro: false, onboardingComplete: true
+             };
+             setUser(fallbackUser);
+             setCurrentScreen(Screen.DASHBOARD);
+          } else {
+             // If session is somehow invalid, go to auth
+             setUser(null);
+             setCurrentScreen(Screen.AUTH);
+          }
         } finally {
           setLoadingData(false);
         }
       } else {
+        // No session
         setUser(null);
-        setCurrentScreen(Screen.AUTH);
+        // Only force screen to AUTH if we aren't already on splash or auth
+        // This prevents overwriting the splash screen logic if it's still running
+        // But for "redirect to login" issues, explicitly ensuring AUTH is fine if we really are logged out.
+        if (currentScreen !== Screen.SPLASH) {
+             setCurrentScreen(Screen.AUTH);
+        }
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, []); // Remove dependency on currentScreen to avoid loops
 
   const calculatedStreak = useMemo(() => {
     if (history.length === 0) return 0;
@@ -562,6 +601,7 @@ const App: React.FC = () => {
   // Handlers
   const handleLogout = () => {
     Storage.logout();
+    setCurrentScreen(Screen.AUTH); // Immediate feedback
   };
 
   const handleShare = async () => {
@@ -669,7 +709,7 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-black min-h-screen text-white font-sans max-w-md mx-auto relative shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden">
-      {currentScreen === Screen.SPLASH && <SplashScreen onComplete={() => setCurrentScreen(Screen.AUTH)} />}
+      {currentScreen === Screen.SPLASH && <SplashScreen onComplete={() => { if (!user) setCurrentScreen(Screen.AUTH); }} />}
       {currentScreen === Screen.AUTH && <AuthScreen onLoginSuccess={() => {}} />}
       
       {/* Main Content */}
