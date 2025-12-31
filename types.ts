@@ -80,7 +80,7 @@ export interface ChallengeTask {
   day: number;
   title: string;
   description: string;
-  type: 'Workout' | 'Rest' | 'Active Recovery';
+  type: 'Workout' | 'Rest' | 'Active Recovery' | 'Task' | 'Mindset' | string;
   duration?: string;
   instructions?: string[]; // Specific exercises for AI plan
 }
