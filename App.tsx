@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Navigation } from './components/Navigation';
 import { Screen, Workout, WorkoutSession, UserProfile, HabitLog, ChallengeState, Habit, WorkoutCategory, WorkoutSegment, ChallengeTask } from './types';
-import { generateMotivationalTip, generateWorkoutVisualization, generateWorkoutPlan, generate30DayChallenge } from './services/geminiService';
+import { generateMotivationalTip, generateWorkoutVisualization, generateWorkoutPlan, generate30DayChallenge, modifyChallengePlan } from './services/geminiService';
 import { Storage, getTodayStr } from './services/storage';
 import { SoundService } from './services/soundService';
 import { PedometerService } from './services/pedometer';
@@ -10,7 +10,7 @@ import { supabase } from './services/supabaseClient';
 import { 
   Play, Pause, StopCircle, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   User as UserIcon, LogOut, Settings, Share2, Camera, Lock, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, X, Volume2,
-  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2, Calendar, Target, AlertTriangle
+  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
 
@@ -651,6 +651,15 @@ const App: React.FC = () => {
       setChallenge(newState);
   };
 
+  const handleModifyChallenge = async (instruction: string) => {
+      if(!challenge?.plan) return;
+      SoundService.playStart();
+      const newPlan = await modifyChallengePlan(challenge.plan, instruction);
+      const newState = await Storage.updateChallengePlan(newPlan);
+      if(newState) setChallenge(newState);
+      SoundService.playSuccess();
+  };
+
   const handleCompleteChallengeDay = async (day: number) => {
       SoundService.playSuccess();
       const newState = await Storage.completeChallengeDay(day);
@@ -692,7 +701,7 @@ const App: React.FC = () => {
             />;
           case Screen.WORKOUTS: return <WorkoutSelectionScreen onStartWorkout={(w) => { setActiveWorkout(w); setActiveSessionMode('Workout'); }} />;
           case Screen.RUNNING:  setActiveSessionMode('Run'); return null; // Immediately switches to session overlay
-          case Screen.CHALLENGE: return <ChallengeScreen state={challenge} onCreate={handleCreateChallenge} onCompleteDay={handleCompleteChallengeDay} onReset={handleResetChallenge} />;
+          case Screen.CHALLENGE: return <ChallengeScreen state={challenge} onCreate={handleCreateChallenge} onModify={handleModifyChallenge} onCompleteDay={handleCompleteChallengeDay} onReset={handleResetChallenge} />;
           case Screen.HABITS: return <HabitTrackerScreen habits={habits} onUpdateHabit={handleUpdateHabit} />;
           case Screen.PROGRESS: return <ProgressScreen history={history} user={user!} />;
           case Screen.PROFILE: return <ProfileScreen 
@@ -842,14 +851,18 @@ const WorkoutSelectionScreen: React.FC<{ onStartWorkout: (w: Workout) => void }>
 const ChallengeScreen: React.FC<{ 
   state: ChallengeState | null, 
   onCreate: (goal: string, level: string) => Promise<void>,
+  onModify: (instruction: string) => Promise<void>,
   onCompleteDay: (day: number) => Promise<void>,
   onReset: () => Promise<void>
-}> = ({ state, onCreate, onCompleteDay, onReset }) => {
+}> = ({ state, onCreate, onModify, onCompleteDay, onReset }) => {
   const [goal, setGoal] = useState("");
   const [level, setLevel] = useState("Beginner");
   const [loading, setLoading] = useState(false);
   const [selectedDay, setSelectedDay] = useState<ChallengeTask | null>(null);
   const [quote, setQuote] = useState<string>("Initializing AI Coach...");
+  const [showModifyModal, setShowModifyModal] = useState(false);
+  const [modificationText, setModificationText] = useState("");
+  const [modifying, setModifying] = useState(false);
 
   // AI Quote Fetching
   useEffect(() => {
@@ -933,7 +946,14 @@ const ChallengeScreen: React.FC<{
                    <div className="bg-white/10 px-3 py-1 rounded-full text-[10px] font-bold text-neon-blue border border-neon-blue/30 uppercase tracking-widest flex items-center gap-2">
                        <Target size={12} /> Mission Active
                    </div>
-                   <button onClick={onReset} className="text-gray-600 hover:text-red-500 transition-colors p-1"><Trash2 size={16}/></button>
+                   <div className="flex items-center gap-2">
+                       <button onClick={() => setShowModifyModal(true)} className="bg-white/10 hover:bg-neon-green/20 text-white hover:text-neon-green transition-colors px-2 py-1 rounded-lg flex items-center gap-1 text-[10px] border border-white/10">
+                           <Edit2 size={12} /> Modify Plan
+                       </button>
+                       <button onClick={onReset} className="bg-red-900/20 hover:bg-red-900/40 text-red-500 transition-colors px-2 py-1 rounded-lg flex items-center gap-1 text-[10px] border border-red-500/20">
+                           <RefreshCw size={12} /> Restart
+                       </button>
+                   </div>
                </div>
                
                <h1 className="text-4xl font-bold italic text-white mb-2">DAY {currentDay}</h1>
@@ -1056,6 +1076,43 @@ const ChallengeScreen: React.FC<{
               </div>
           </div>
       )}
+
+      {/* Modify Plan Modal */}
+      {showModifyModal && (
+        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative">
+                <button onClick={() => setShowModifyModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
+                <div className="mb-4 text-center">
+                    <Sparkles className="text-neon-green w-12 h-12 mx-auto mb-2 animate-pulse" />
+                    <h2 className="text-2xl font-bold text-white">Remix Protocol</h2>
+                    <p className="text-gray-400 text-xs mt-1">Tell the AI how to adjust your current plan.</p>
+                </div>
+                
+                <textarea 
+                    value={modificationText}
+                    onChange={(e) => setModificationText(e.target.value)}
+                    placeholder="e.g. I hurt my knee, switch to low impact."
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-neon-green outline-none min-h-[100px] mb-4"
+                />
+
+                <button 
+                    onClick={async () => {
+                        if (!modificationText.trim()) return;
+                        setModifying(true);
+                        await onModify(modificationText);
+                        setModifying(false);
+                        setShowModifyModal(false);
+                        setModificationText("");
+                    }}
+                    disabled={modifying || !modificationText.trim()}
+                    className="w-full bg-neon-green text-black font-bold py-3 rounded-xl hover:shadow-[0_0_15px_rgba(204,255,0,0.4)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                    {modifying ? <Loader2 className="animate-spin" /> : "APPLY CHANGES"}
+                </button>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 };

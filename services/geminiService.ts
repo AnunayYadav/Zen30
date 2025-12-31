@@ -152,6 +152,66 @@ export const generate30DayChallenge = async (goal: string, level: string): Promi
   }
 };
 
+export const modifyChallengePlan = async (currentPlan: ChallengeTask[], instruction: string): Promise<ChallengeTask[]> => {
+  try {
+    const prompt = `
+      I have a 30-day workout plan. I need to modify it based on this request: "${instruction}".
+      
+      Here is the CURRENT PLAN (JSON):
+      ${JSON.stringify(currentPlan.slice(0, 5))} ... (and so on).
+
+      RULES:
+      1. Return a FULL 30-day JSON array.
+      2. Keep the same structure.
+      3. Only modify days that need changing based on the request.
+      4. If the user asks to add tasks, insert them into relevant days' instructions or change the workout title/description.
+      
+      Do not output markdown code blocks. Just the JSON.
+    `;
+
+    // We send a simplified version of the plan to save tokens if needed, 
+    // but for best results, let's trust Gemini context window.
+    // Re-constructing the full prompt with full context:
+    
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `
+          User Request: "${instruction}"
+          Current Plan Context (First 3 days sample): ${JSON.stringify(currentPlan.slice(0, 3))}
+          
+          TASK: Rewrite the entire 30-day plan JSON array to accommodate the request. 
+          Keep day numbers 1-30.
+        `,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                day: { type: Type.INTEGER },
+                title: { type: Type.STRING },
+                description: { type: Type.STRING },
+                type: { type: Type.STRING, enum: ['Workout', 'Rest', 'Active Recovery'] },
+                duration: { type: Type.STRING },
+                instructions: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ['day', 'title', 'type', 'duration', 'description']
+            }
+          }
+        }
+    });
+
+    let text = response.text || "[]";
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(text);
+
+  } catch (e) {
+    console.error("Modify Plan Error", e);
+    throw new Error("Failed to modify plan. Try again.");
+  }
+};
+
 export const generateWorkoutVisualization = async (exerciseName: string): Promise<string | null> => {
   try {
     // gemini-2.5-flash-image supports aspect ratio config

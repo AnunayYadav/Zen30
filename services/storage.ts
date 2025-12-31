@@ -238,6 +238,16 @@ export const Storage = {
     return { startDate: start, completedDays: [], goal, plan };
   },
 
+  updateChallengePlan: async (newPlan: ChallengeTask[]) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    localStorage.setItem(`zen30_plan_${user.id}`, JSON.stringify(newPlan));
+    
+    // Return the refreshed state
+    return await Storage.getChallenge();
+  },
+
   completeChallengeDay: async (day: number) => {
     const current = await Storage.getChallenge();
     if (!current) return null; // Should not happen
