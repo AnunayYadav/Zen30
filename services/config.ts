@@ -1,16 +1,17 @@
 // --- CONFIGURATION ---
 
-// process.env is polyfilled in vite.config.ts with the correct values found during build time.
-// We use 'as any' to avoid TypeScript strictness.
-const env = (typeof process !== 'undefined' ? process.env : {}) as any;
+// Standard Vite Usage:
+// Variables starting with VITE_ are automatically available on import.meta.env
+// We fallback to empty strings to prevent crashes if something is missing.
 
 export const SUPABASE_CONFIG = {
-  // These keys are guaranteed to be populated by vite.config.ts if they existed in the environment
-  url: env.VITE_SUPABASE_URL || "",
-  anonKey: env.VITE_SUPABASE_ANON_KEY || ""
+  url: (import.meta as any).env.VITE_SUPABASE_URL || "",
+  anonKey: (import.meta as any).env.VITE_SUPABASE_ANON_KEY || ""
 };
 
 export const PRODUCTION_URL = "https://zen30.vercel.app"; 
 
 // Gemini API Key
-export const GEMINI_API_KEY = env.API_KEY || "";
+// We use process.env.API_KEY here because we manually defined it in vite.config.ts
+// to support keys that might not have the VITE_ prefix.
+export const GEMINI_API_KEY = process.env.API_KEY || (import.meta as any).env.VITE_API_KEY || "";

@@ -1,9 +1,9 @@
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { WorkoutSegment } from "../types";
+import { GEMINI_API_KEY } from "./config";
 
-// Use the environment variable directly as required by guidelines
-// We assume process.env.API_KEY is available (polyfilled by vite.config.ts)
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Use the API key exported from our robust config
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 export const generateMotivationalTip = async (): Promise<string> => {
   try {

@@ -4,16 +4,10 @@ import { SUPABASE_CONFIG } from './config';
 const url = SUPABASE_CONFIG.url;
 const key = SUPABASE_CONFIG.anonKey;
 
-// We strictly check if keys are present. 
-// If not, we log a critical error, but we do NOT switch to a "Demo Mode".
-if (!url || !key || url.includes("undefined")) {
-  console.error("🚨 CRITICAL ERROR: Supabase keys are missing in the environment!");
-  console.error("URL:", url);
-  console.error("Key:", key ? "******" : "Missing");
-}
-
-// Initialize Supabase Client directly.
-// If keys are missing, this might throw or fail on network requests.
+// Initialize Supabase Client
+// We do not block the app if keys are missing; we let the client attempt connection.
+// If variables are missing, url/key will be empty strings, which might cause runtime errors
+// on network requests, but won't crash the app startup.
 export const supabase = createClient(
   url || "https://placeholder.supabase.co", 
   key || "placeholder-key", 
@@ -26,5 +20,4 @@ export const supabase = createClient(
   }
 );
 
-// Always return true to force the app to try using the live backend
-export const isConfigured = true;
+export const isConfigured = !!(url && key);
