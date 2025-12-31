@@ -9,7 +9,7 @@ import { PedometerService } from './services/pedometer';
 import { 
   Play, Pause, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   LogOut, Settings, X, Volume2, VolumeX,
-  ChevronRight, BrainCircuit, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, CheckSquare, FileText, Shield, Lock, User
+  ChevronRight, BrainCircuit, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, CheckSquare, FileText, Shield, User
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -229,69 +229,39 @@ const DayDetailsModal: React.FC<{
   day: ChallengeTask;
   completed: boolean;
   currentLog: ChallengeLog;
-  currentDayNum: number;
   onClose: () => void;
   onSaveLog: (log: ChallengeLog) => void;
   onUpdateTask: (newTask: ChallengeTask) => void;
   onSetCompletion: (isComplete: boolean) => void;
-}> = ({ day, completed, currentLog, currentDayNum, onClose, onSaveLog, onUpdateTask, onSetCompletion }) => {
+}> = ({ day, completed, currentLog, onClose, onSaveLog, onUpdateTask, onSetCompletion }) => {
   
   const [isEditing, setIsEditing] = useState(false);
-  
   const [notes, setNotes] = useState(currentLog.notes);
   const [checkedIndices, setCheckedIndices] = useState<number[]>(currentLog.checkedIndices);
   
-  // Use refs to hold latest values for unmount saving
-  const notesRef = useRef(notes);
-  const checksRef = useRef(checkedIndices);
-
   const [editTitle, setEditTitle] = useState(day.title);
   const [editDesc, setEditDesc] = useState(day.description);
   const [editInstructions, setEditInstructions] = useState(day.instructions?.join('\n') || "");
 
-  // Update refs when state changes
-  useEffect(() => { notesRef.current = notes; }, [notes]);
-  useEffect(() => { checksRef.current = checkedIndices; }, [checkedIndices]);
-
-  // Auto-Save: Notes (Debounced)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-        onSaveLog({ notes, checkedIndices: checksRef.current });
-    }, 1000); // 1 sec debounce for text
-    return () => clearTimeout(timer);
-  }, [notes]);
-
-  // Auto-Save: Checks (Immediate)
-  useEffect(() => {
-    onSaveLog({ notes: notesRef.current, checkedIndices });
-    
-    // Auto-Complete Logic based on checks
-    if(day.type !== 'Rest') {
-         const total = day.instructions?.length || 0;
-         if(total > 0 && checkedIndices.length === total) {
-             if(!completed) onSetCompletion(true);
-         } else {
-             if(completed && checkedIndices.length < total) onSetCompletion(false);
-         }
-     }
-  }, [checkedIndices, completed, day.instructions?.length, day.type]); 
-
-  // Save on Unmount
-  useEffect(() => {
-    return () => {
-        onSaveLog({ notes: notesRef.current, checkedIndices: checksRef.current });
-    }
-  }, []);
-
   const toggleCheck = (idx: number) => {
-    // Prevent checking future tasks
-    if (day.day > currentDayNum) return;
-
     if (checkedIndices.includes(idx)) {
       setCheckedIndices(prev => prev.filter(i => i !== idx));
     } else {
       setCheckedIndices(prev => [...prev, idx]);
     }
+  };
+
+  const handleSaveAndClose = () => {
+    onSaveLog({ notes, checkedIndices });
+    
+    // Auto-complete check
+    const total = day.instructions?.length || 0;
+    if(day.type !== 'Rest' && total > 0) {
+        if(checkedIndices.length === total && !completed) onSetCompletion(true);
+        if(checkedIndices.length < total && completed) onSetCompletion(false);
+    }
+    
+    onClose();
   };
 
   const handleSaveEdit = () => {
@@ -338,18 +308,16 @@ const DayDetailsModal: React.FC<{
   // Calculate percentage for progress bar inside modal
   const totalItems = day.instructions?.length || 0;
   const progressPct = totalItems > 0 ? (checkedIndices.length / totalItems) * 100 : (completed ? 100 : 0);
-  const isLocked = day.day > currentDayNum;
 
   return (
     <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
         <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative max-h-[85vh] overflow-y-auto shadow-[0_0_50px_rgba(0,0,0,0.8)]">
-            <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
+            <button onClick={handleSaveAndClose} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
             <div className="mb-4 border-b border-white/10 pb-4 pr-8">
                 <div className="flex items-center gap-2 mb-2">
                   <span className={`text-[10px] font-bold px-2 py-1 rounded inline-block ${day.type === 'Rest' ? 'bg-blue-500/20 text-blue-400' : 'bg-neon-green/20 text-neon-green'}`}>
                       DAY {day.day}
                   </span>
-                  {isLocked && <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-gray-400 flex items-center gap-1"><Lock size={8}/> FUTURE</span>}
                   <button onClick={() => setIsEditing(true)} className="ml-auto bg-white/5 hover:bg-white/10 p-1.5 rounded-md text-gray-400 hover:text-white transition-colors">
                      <Edit2 size={12}/>
                   </button>
@@ -371,7 +339,7 @@ const DayDetailsModal: React.FC<{
                          {day.instructions?.map((ins, i) => {
                              const isChecked = checkedIndices.includes(i);
                              return (
-                                 <div key={i} onClick={() => toggleCheck(i)} className={`flex gap-3 text-sm transition-all group ${isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer text-gray-300'}`}>
+                                 <div key={i} onClick={() => toggleCheck(i)} className="flex gap-3 text-sm transition-all group cursor-pointer text-gray-300">
                                      <div className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all ${isChecked ? 'bg-neon-green border-neon-green text-black' : 'border-gray-600 group-hover:border-white'}`}>
                                          {isChecked && <CheckCircle size={14} />}
                                      </div>
@@ -382,9 +350,9 @@ const DayDetailsModal: React.FC<{
                      </div>
                  </div>
             ) : (
-                <div className={`bg-blue-900/10 rounded-xl p-4 mb-4 border border-blue-500/20 flex items-center justify-between ${isLocked ? 'opacity-50' : ''}`}>
+                <div className="bg-blue-900/10 rounded-xl p-4 mb-4 border border-blue-500/20 flex items-center justify-between">
                      <span className="text-blue-400 font-bold text-sm">Mark Rest Day Complete</span>
-                     <button disabled={isLocked} onClick={() => onSetCompletion(!completed)} className={`w-10 h-6 rounded-full relative transition-colors ${completed ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                     <button onClick={() => onSetCompletion(!completed)} className={`w-10 h-6 rounded-full relative transition-colors ${completed ? 'bg-blue-500' : 'bg-gray-700'}`}>
                         <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${completed ? 'right-1' : 'left-1'}`}></div>
                      </button>
                 </div>
@@ -395,17 +363,14 @@ const DayDetailsModal: React.FC<{
                 <textarea 
                    value={notes}
                    onChange={(e) => setNotes(e.target.value)}
-                   placeholder={isLocked ? "Unlock this day to add notes..." : "Type your progress, reps, or how it felt..."}
-                   disabled={isLocked}
-                   className={`w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-neon-green outline-none h-24 resize-none placeholder-gray-600 ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                   placeholder="Type your progress, reps, or how it felt..."
+                   className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-neon-green outline-none h-24 resize-none placeholder-gray-600"
                 />
             </div>
             
-            {completed && (
-                <div className="mt-4 flex items-center justify-center gap-2 text-neon-green font-bold text-sm animate-pulse">
-                    <CheckCircle size={16} /> Day {day.day} Completed
-                </div>
-            )}
+            <button onClick={handleSaveAndClose} className="w-full bg-neon-green text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 mt-4 hover:shadow-[0_0_15px_rgba(204,255,0,0.4)] transition-all">
+                <CheckCircle size={18}/> SAVE PROGRESS
+            </button>
         </div>
     </div>
   );
@@ -457,7 +422,7 @@ const ChallengeScreen: React.FC<{
                   <textarea 
                       value={goal} 
                       onChange={(e) => setGoal(e.target.value)}
-                      placeholder="e.g. Lose 5kg, Learn to do a split, Run a marathon..."
+                      placeholder="e.g. Lose 5kg, Learn to do a split, Study Calculus, Learn to Cook..."
                       className="w-full bg-black/50 border border-white/20 rounded-xl p-4 text-white placeholder-gray-600 focus:border-neon-green outline-none h-24 resize-none mb-6"
                   />
                   <div className="grid grid-cols-3 gap-2 mb-8">
@@ -605,11 +570,10 @@ const ChallengeScreen: React.FC<{
                         style={{ height: `${dayPercent}%` }}
                       />
                       
-                      <span className={`text-sm font-bold ${task.day > currentDay ? 'opacity-50' : ''} relative z-10`}>{task.day}</span>
+                      <span className={`text-sm font-bold relative z-10`}>{task.day}</span>
                       {isCompleted && <CheckCircle size={10} className="mt-1 relative z-10 text-neon-green" />}
                       {!isCompleted && isToday && <div className="w-1.5 h-1.5 bg-white rounded-full mt-1 animate-ping relative z-10"></div>}
                       {isMissed && <AlertTriangle size={10} className="mt-1 relative z-10" />}
-                      {task.day > currentDay && <Lock size={8} className="absolute top-1.5 right-1.5 opacity-30"/>}
                   </button>
               );
           })}
@@ -620,7 +584,6 @@ const ChallengeScreen: React.FC<{
               day={selectedDay}
               completed={state.completedDays.includes(selectedDay.day)}
               currentLog={getLog(selectedDay.day)}
-              currentDayNum={currentDay}
               onClose={() => setSelectedDay(null)}
               onSetCompletion={async (val) => {
                   if (val) {
@@ -676,377 +639,409 @@ const ChallengeScreen: React.FC<{
   );
 };
 
-const App: React.FC = () => {
-  const [screen, setScreen] = useState<Screen>(Screen.SPLASH);
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [challengeState, setChallengeState] = useState<ChallengeState | null>(null);
-  const [habits, setHabits] = useState<HabitLog>({});
-  const [history, setHistory] = useState<WorkoutSession[]>([]);
-  const [steps, setSteps] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showAvatarSelect, setShowAvatarSelect] = useState(false);
+const WorkoutRunner: React.FC<{ workout: Workout; onComplete: (stats: any) => void; onCancel: () => void }> = ({ workout, onComplete, onCancel }) => {
+  const [seconds, setSeconds] = useState(0);
+  const [isActive, setIsActive] = useState(false);
 
-  // Initialize Sound
   useEffect(() => {
-    SoundService.setMuted(isMuted);
-  }, [isMuted]);
+    let interval: any = null;
+    if (isActive) {
+      interval = setInterval(() => {
+        setSeconds(s => s + 1);
+      }, 1000);
+    } else if (!isActive && seconds !== 0) {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isActive, seconds]);
 
-  // Data Loader
-  const refreshData = async () => {
-    if (!user) return;
-    const [c, h, hist, s] = await Promise.all([
-      Storage.getChallenge(),
-      Storage.getHabits(),
-      Storage.getHistory(),
-      Storage.getPassiveSteps()
-    ]);
-    setChallengeState(c);
-    setHabits(h);
-    setHistory(hist);
-    setSteps(s);
+  const formatTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Auth Listener
-  useEffect(() => {
-    const { data: { subscription } } = Storage.onAuthStateChange(async (session) => {
-      if (session?.user) {
-        const profile = await Storage.getUserProfile(session.user.id);
-        if (profile) {
-            setUser(profile);
-            // We'll load the rest in the effect below dependent on user
-        } else {
-             // Handle case where auth exists but profile doesn't? 
-             // AuthScreen handles creation.
-        }
-      } else {
-        setUser(null);
-        if(screen !== Screen.SPLASH) setScreen(Screen.AUTH);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [screen]);
+  return (
+    <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center p-8">
+       <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-black pointer-events-none"></div>
+       <div className="z-10 w-full max-w-md text-center">
+           <img src={workout.image} className="w-32 h-32 rounded-full mx-auto mb-6 object-cover border-4 border-neon-green shadow-[0_0_30px_rgba(204,255,0,0.3)] animate-pulse" />
+           <h2 className="text-3xl font-bold text-white mb-2">{workout.title}</h2>
+           <p className="text-neon-blue font-mono text-5xl font-bold my-8 tabular-nums tracking-wider">{formatTime(seconds)}</p>
+           
+           <div className="flex gap-4 justify-center">
+               <button onClick={() => setIsActive(!isActive)} className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center hover:scale-110 transition-transform">
+                   {isActive ? <Pause size={24} fill="black" /> : <Play size={24} fill="black" className="ml-1" />}
+               </button>
+               <button onClick={() => {
+                   SoundService.playSuccess();
+                   onComplete({ duration: seconds, calories: Math.floor(seconds * 0.15) }); // Est calories
+               }} className="w-16 h-16 rounded-full bg-neon-green text-black flex items-center justify-center hover:scale-110 transition-transform shadow-[0_0_20px_rgba(204,255,0,0.6)]">
+                   <CheckSquare size={24} />
+               </button>
+           </div>
+           
+           <button onClick={onCancel} className="mt-12 text-gray-500 text-sm hover:text-white flex items-center gap-2 justify-center mx-auto">
+               <X size={16}/> CANCEL WORKOUT
+           </button>
+       </div>
+    </div>
+  );
+};
 
-  // Load Data on User Change
+const App: React.FC = () => {
+  const [loading, setLoading] = useState(true); // Initial app load
+  const [showSplash, setShowSplash] = useState(true);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.DASHBOARD);
+  
+  // Data
+  const [workouts, setWorkouts] = useState<WorkoutSession[]>([]);
+  const [habits, setHabits] = useState<HabitLog>({});
+  const [challengeState, setChallengeState] = useState<ChallengeState | null>(null);
+  const [steps, setSteps] = useState(0);
+  const [dailyTip, setDailyTip] = useState<string>("Loading motivation...");
+  
+  // UI States
+  const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAvatarOpen, setIsAvatarOpen] = useState(false);
+  const [muted, setMuted] = useState(false);
+
   useEffect(() => {
-      if(user) {
-          refreshData();
-          // Pedometer
-          PedometerService.start(() => {
-              setSteps(s => {
-                  const n = s + 1;
-                  if(n % 50 === 0) Storage.savePassiveSteps(n);
-                  return n;
-              });
+      // Auth Listener
+      const { data: { subscription } } = Storage.onAuthStateChange(async (session) => {
+          if (session?.user) {
+              const p = await Storage.getUserProfile(session.user.id);
+              setUser(p);
+              await refreshData();
+          } else {
+              setUser(null);
+              setCurrentScreen(Screen.DASHBOARD);
+          }
+          setLoading(false);
+      });
+      
+      // Daily Tip
+      const cached = Storage.getDailyTip();
+      if(cached && cached.date === getTodayStr()) {
+          setDailyTip(cached.text);
+      } else {
+          generateMotivationalTip().then(tip => {
+              setDailyTip(tip);
+              Storage.saveDailyTip(tip);
           });
       }
-  }, [user?.id]);
 
-  // Habit Toggle
-  const handleToggleHabit = async (habitId: string, val: number | boolean) => {
-      const newHabits = await Storage.saveHabitValue(habitId, val);
-      setHabits(newHabits);
-      SoundService.playClick();
+      return () => subscription.unsubscribe();
+  }, []);
+
+  const refreshData = async () => {
+      const w = await Storage.getHistory();
+      setWorkouts(w);
+      const h = await Storage.getHabits();
+      setHabits(h);
+      const c = await Storage.getChallenge();
+      setChallengeState(c);
+      const s = await Storage.getPassiveSteps();
+      setSteps(s);
   };
 
-  // Render Logic
+  const handleWorkoutComplete = async (stats: { duration: number, calories: number }) => {
+      if (!activeWorkout || !user) return;
+      const session: WorkoutSession = {
+          id: crypto.randomUUID(),
+          date: new Date().toISOString(),
+          type: 'Workout',
+          durationSeconds: stats.duration,
+          caloriesBurned: stats.calories,
+          category: activeWorkout.category
+      };
+      const newHistory = await Storage.saveSession(session);
+      setWorkouts(newHistory);
+      setActiveWorkout(null);
+      setCurrentScreen(Screen.PROGRESS); // Go to stats to show off
+  };
+
+  const toggleHabit = async (habitId: string, type: string) => {
+      const today = getTodayStr();
+      const currentVal = habits[today]?.[habitId];
+      let newVal: number | boolean = false;
+      
+      if (type === 'toggle') {
+          newVal = !currentVal;
+      } else {
+          newVal = (typeof currentVal === 'number' ? currentVal : 0) + 1;
+      }
+      
+      SoundService.playClick();
+      const newHabits = await Storage.saveHabitValue(habitId, newVal);
+      setHabits(newHabits);
+  };
+  
+  useEffect(() => {
+     if(user && PedometerService.isSupported()) {
+         PedometerService.requestPermission().then(res => {
+            if(res === 'granted') {
+                 PedometerService.start(() => {
+                     setSteps(prev => {
+                         const n = prev + 1;
+                         if (n % 100 === 0) Storage.savePassiveSteps(n); // Save every 100 steps
+                         return n;
+                     });
+                 });
+            }
+         });
+     }
+  }, [user]);
+
+  // --- RENDERERS ---
+
+  if (showSplash) return <SplashScreen onComplete={() => setShowSplash(false)} />;
+  if (!user && !loading) return <AuthScreen onLoginSuccess={(u) => { setUser(u); refreshData(); }} />;
+  if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-neon-green" /></div>;
+
+  if (activeWorkout) return <WorkoutRunner workout={activeWorkout} onComplete={handleWorkoutComplete} onCancel={() => setActiveWorkout(null)} />;
+
   const renderScreen = () => {
-      switch(screen) {
+      switch(currentScreen) {
           case Screen.DASHBOARD:
               return (
                   <div className="p-6 pb-24 space-y-6">
-                      {/* Greeting */}
                       <div className="flex justify-between items-center">
                           <div>
-                              <h1 className="text-2xl font-bold text-white">Hi, {user?.name.split(' ')[0]}</h1>
+                              <h1 className="text-2xl font-bold text-white">Hello, {user?.name.split(' ')[0]}</h1>
                               <p className="text-gray-400 text-xs">{getTodayStr()}</p>
                           </div>
-                          <div 
-                            onClick={() => setShowAvatarSelect(true)}
-                            className="w-10 h-10 rounded-full bg-white/10 overflow-hidden border border-white/20 relative"
-                          >
-                              {user?.profileImage ? <img src={user.profileImage} className="w-full h-full object-cover"/> : <User className="p-2 text-gray-400"/>}
+                          <button onClick={() => setIsAvatarOpen(true)}>
+                              <img src={user?.profileImage || AVATAR_PRESETS[0]} className="w-10 h-10 rounded-full border border-white/20" />
+                          </button>
+                      </div>
+                      
+                      {/* Daily Stats */}
+                      <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                              <div className="flex items-center gap-2 mb-2 text-neon-blue">
+                                  <Footprints size={18} /> <span className="text-xs font-bold">STEPS</span>
+                              </div>
+                              <span className="text-2xl font-bold">{steps}</span>
+                          </div>
+                          <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                              <div className="flex items-center gap-2 mb-2 text-orange-400">
+                                  <Flame size={18} /> <span className="text-xs font-bold">KCAL</span>
+                              </div>
+                              <span className="text-2xl font-bold">{workouts.filter(w => w.date.startsWith(getTodayStr())).reduce((a,b) => a + b.caloriesBurned, 0)}</span>
                           </div>
                       </div>
                       
-                      {/* Steps Card */}
-                      <div className="bg-gradient-to-r from-gray-900 to-black border border-white/10 rounded-3xl p-6 relative overflow-hidden">
-                          <div className="absolute right-0 bottom-0 opacity-10 text-white"><Footprints size={100}/></div>
-                          <div className="relative z-10">
-                              <div className="flex items-baseline gap-1">
-                                  <span className="text-4xl font-bold text-neon-green neon-text">{steps.toLocaleString()}</span>
-                                  <span className="text-gray-500 text-xs font-bold uppercase">Steps</span>
-                              </div>
-                              <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden w-full max-w-[200px]">
-                                  <div className="h-full bg-neon-green" style={{width: `${Math.min((steps/10000)*100, 100)}%`}}></div>
-                              </div>
-                          </div>
+                      {/* Motivation */}
+                      <div className="bg-gradient-to-r from-neon-green/20 to-transparent p-6 rounded-2xl border-l-4 border-neon-green">
+                          <h3 className="text-neon-green font-bold text-sm mb-1">DAILY INTEL</h3>
+                          <p className="text-white italic">"{dailyTip}"</p>
                       </div>
 
-                      {/* Quick Habits */}
-                      <div>
-                          <h3 className="text-white font-bold mb-3 flex items-center gap-2"><Zap size={16} className="text-neon-blue"/> Daily Grinds</h3>
-                          <div className="grid grid-cols-5 gap-2">
-                              {DEFAULT_HABITS.map(h => {
-                                  const today = getTodayStr();
-                                  const val = habits[today]?.[h.id];
-                                  const isDone = h.type === 'toggle' ? !!val : (val as number) >= (h.target || 1);
-                                  
-                                  return (
-                                      <button 
-                                        key={h.id}
-                                        onClick={() => {
-                                            if(h.type === 'toggle') handleToggleHabit(h.id, !val);
-                                            else handleToggleHabit(h.id, ((val as number)||0) + 1);
-                                        }}
-                                        className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${isDone ? 'bg-neon-green text-black' : 'bg-white/5 text-gray-400'}`}
-                                      >
-                                          <span className="text-xl">{h.icon}</span>
-                                      </button>
-                                  )
-                              })}
-                          </div>
+                      {/* Quick Actions */}
+                      <h3 className="text-white font-bold">Quick Actions</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                           <button onClick={() => setCurrentScreen(Screen.WORKOUTS)} className="h-24 bg-white/5 rounded-xl flex flex-col items-center justify-center gap-2 border border-white/5 hover:bg-white/10 hover:border-neon-green transition-all">
+                               <Dumbbell className="text-neon-green" />
+                               <span className="text-sm font-bold">Workout</span>
+                           </button>
+                           <button onClick={() => setCurrentScreen(Screen.CHALLENGE)} className="h-24 bg-white/5 rounded-xl flex flex-col items-center justify-center gap-2 border border-white/5 hover:bg-white/10 hover:border-neon-blue transition-all">
+                               <Trophy className="text-neon-blue" />
+                               <span className="text-sm font-bold">Challenge</span>
+                           </button>
                       </div>
-                      
-                      {/* Active Challenge Preview */}
-                      {challengeState && (
-                         <div 
-                            onClick={() => setScreen(Screen.CHALLENGE)}
-                            className="bg-white/5 border border-white/10 rounded-3xl p-6 relative overflow-hidden hover:border-white/20 transition-all cursor-pointer"
-                         >
-                             <div className="flex justify-between items-start mb-2">
-                                <h3 className="text-white font-bold flex items-center gap-2"><Trophy size={16} className="text-yellow-500"/> Current Mission</h3>
-                                <ChevronRight className="text-gray-500" size={16} />
-                             </div>
-                             <p className="text-gray-400 text-sm mb-4 line-clamp-1">"{challengeState.goal}"</p>
-                             <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
-                                 <div className="bg-yellow-500 h-full" style={{width: `${(challengeState.completedDays.length / 30)*100}%`}}></div>
-                             </div>
-                             <div className="mt-2 flex justify-between text-[10px] text-gray-500 font-bold uppercase">
-                                 <span>Day {challengeState.completedDays.length}</span>
-                                 <span>30 Days</span>
-                             </div>
-                         </div>
-                      )}
                   </div>
               );
-
           case Screen.WORKOUTS:
               return (
                   <div className="p-6 pb-24 space-y-4">
                       <h2 className="text-2xl font-bold text-white mb-4">Workouts</h2>
                       {WORKOUT_DB.map(w => (
-                          <div key={w.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex gap-4 hover:bg-white/10 transition-colors cursor-pointer group">
-                              <div className="w-20 h-20 rounded-xl bg-gray-800 overflow-hidden shrink-0">
-                                  <img src={w.image} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                              </div>
-                              <div className="flex flex-col justify-center">
-                                  <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-[10px] bg-neon-green/20 text-neon-green px-2 py-0.5 rounded font-bold uppercase">{w.category}</span>
-                                      <span className="text-[10px] bg-white/10 text-gray-400 px-2 py-0.5 rounded font-bold uppercase">{w.difficulty}</span>
-                                  </div>
-                                  <h3 className="text-white font-bold leading-tight mb-1">{w.title}</h3>
-                                  <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <div key={w.id} onClick={() => setActiveWorkout(w)} className="bg-white/5 rounded-2xl overflow-hidden border border-white/5 hover:border-neon-green/50 transition-all cursor-pointer group relative h-32">
+                              <img src={w.image} className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity" />
+                              <div className="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent p-4 flex flex-col justify-center">
+                                  <h3 className="text-xl font-bold text-white group-hover:text-neon-green transition-colors">{w.title}</h3>
+                                  <div className="flex gap-3 text-xs text-gray-300 mt-2">
                                       <span className="flex items-center gap-1"><Clock size={12}/> {w.duration}</span>
-                                      <span className="flex items-center gap-1"><Flame size={12}/> {w.estCalories} kcal</span>
+                                      <span className="flex items-center gap-1"><Zap size={12}/> {w.difficulty}</span>
                                   </div>
                               </div>
                           </div>
                       ))}
                   </div>
               );
-          
-          case Screen.CHALLENGE:
-              return (
-                  <ChallengeScreen 
-                      state={challengeState}
-                      onCreate={async (g, l) => {
-                          const plan = await generate30DayChallenge(g, l);
-                          const s = await Storage.initChallenge(plan, g);
-                          setChallengeState(s);
-                      }}
-                      onModify={async (inst) => {
-                          if(challengeState?.plan) {
-                              const newPlan = await modifyChallengePlan(challengeState.plan, inst);
-                              const s = await Storage.updateChallengePlan(newPlan);
-                              setChallengeState(s);
-                          }
-                      }}
-                      onUpdateState={setChallengeState}
-                      onCompleteDay={async (d) => {
-                           const s = await Storage.completeChallengeDay(d);
-                           if(s) {
-                               setChallengeState(s);
-                               SoundService.playSuccess();
-                           }
-                      }}
-                      onDelete={async () => {
-                          if(confirm("End current challenge?")) {
-                              await Storage.resetChallenge();
-                              setChallengeState(null);
-                          }
-                      }}
-                      onRestart={async () => {
-                           if(confirm("Restart from Day 1?")) {
-                               const s = await Storage.restartChallenge();
-                               setChallengeState(s);
-                           }
-                      }}
-                  />
-              );
-
           case Screen.HABITS:
-               return (
-                   <div className="p-6 pb-24">
-                       <h2 className="text-2xl font-bold text-white mb-6">Habit Tracker</h2>
-                       <div className="space-y-3">
-                           {DEFAULT_HABITS.map(h => {
-                               const today = getTodayStr();
-                               const val = habits[today]?.[h.id];
-                               const isDone = h.type === 'toggle' ? !!val : (val as number) >= (h.target || 1);
-                               
-                               return (
-                                   <div key={h.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
-                                       <div className="flex items-center gap-4">
-                                           <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-2xl">
-                                               {h.icon}
-                                           </div>
-                                           <div>
-                                               <h3 className="text-white font-bold">{h.name}</h3>
-                                               {h.type === 'counter' && <p className="text-xs text-gray-500">{val||0} / {h.target} {h.unit}</p>}
-                                           </div>
-                                       </div>
-                                       
-                                       {h.type === 'toggle' ? (
-                                           <button onClick={() => handleToggleHabit(h.id, !val)} className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isDone ? 'bg-neon-green text-black' : 'bg-white/10 text-gray-500'}`}>
-                                               <CheckSquare size={20} />
-                                           </button>
-                                       ) : (
-                                           <button onClick={() => handleToggleHabit(h.id, ((val as number)||0)+1)} className="w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-neon-green hover:text-black transition-colors">
-                                               <Plus size={20} />
-                                           </button>
-                                       )}
-                                   </div>
-                               );
-                           })}
-                       </div>
-                   </div>
-               );
-          
+              return (
+                  <div className="p-6 pb-24 space-y-6">
+                      <h2 className="text-2xl font-bold text-white">Habit Tracker</h2>
+                      <div className="space-y-3">
+                          {DEFAULT_HABITS.map(h => {
+                              const today = getTodayStr();
+                              const val = habits[today]?.[h.id];
+                              const isDone = h.type === 'toggle' ? !!val : (val >= (h.target || 1));
+                              
+                              return (
+                                  <div key={h.id} className="bg-white/5 rounded-xl p-4 flex items-center justify-between border border-white/5">
+                                      <div className="flex items-center gap-4">
+                                          <div className="text-2xl">{h.icon}</div>
+                                          <div>
+                                              <p className="font-bold text-white">{h.name}</p>
+                                              {h.type === 'counter' && <p className="text-xs text-gray-500">{val || 0} / {h.target} {h.unit}</p>}
+                                          </div>
+                                      </div>
+                                      {h.type === 'toggle' ? (
+                                          <button onClick={() => toggleHabit(h.id, 'toggle')} className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all ${isDone ? 'bg-neon-green border-neon-green text-black' : 'border-gray-600'}`}>
+                                              {isDone && <CheckSquare size={16} />}
+                                          </button>
+                                      ) : (
+                                          <button onClick={() => toggleHabit(h.id, 'counter')} className="w-8 h-8 rounded-full bg-white/10 hover:bg-neon-blue hover:text-black flex items-center justify-center transition-colors">
+                                              <Plus size={16} />
+                                          </button>
+                                      )}
+                                  </div>
+                              )
+                          })}
+                      </div>
+                  </div>
+              );
+          case Screen.CHALLENGE:
+              return <ChallengeScreen 
+                  state={challengeState} 
+                  onCreate={async (g, l) => {
+                      const plan = await generate30DayChallenge(g, l);
+                      const s = await Storage.initChallenge(plan, g);
+                      if (s) setChallengeState(s);
+                  }}
+                  onModify={async (ins) => {
+                      if (!challengeState?.plan) return;
+                      const newPlan = await modifyChallengePlan(challengeState.plan, ins);
+                      const s = await Storage.updateChallengePlan(newPlan);
+                      if (s) setChallengeState(s);
+                  }}
+                  onCompleteDay={async (d) => {
+                      SoundService.playSuccess();
+                      const s = await Storage.completeChallengeDay(d);
+                      if (s) setChallengeState(s);
+                  }}
+                  onUpdateState={setChallengeState}
+                  onDelete={async () => {
+                      if(confirm("Delete current challenge?")) {
+                          await Storage.resetChallenge();
+                          setChallengeState(null);
+                      }
+                  }}
+                  onRestart={async () => {
+                      if(confirm("Restart challenge from Day 1?")) {
+                          const s = await Storage.restartChallenge();
+                          setChallengeState(s);
+                      }
+                  }}
+              />;
           case Screen.PROGRESS:
-               return (
-                   <div className="p-6 pb-24 h-full flex flex-col">
-                       <h2 className="text-2xl font-bold text-white mb-6">Stats</h2>
-                       <div className="flex-grow flex flex-col justify-center">
-                           <div className="h-64 w-full bg-white/5 rounded-2xl p-4 border border-white/10 mb-6">
-                               <h3 className="text-xs font-bold text-gray-500 uppercase mb-4">Activity History</h3>
-                               <ResponsiveContainer width="100%" height="100%">
-                                   <BarChart data={history.slice(-7)}>
-                                       <XAxis dataKey="date" tick={{fontSize: 10}} stroke="#666" />
-                                       <Tooltip 
-                                          contentStyle={{backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px'}} 
-                                          itemStyle={{color: '#fff'}}
-                                       />
-                                       <Bar dataKey="durationSeconds" fill="#ccff00" radius={[4,4,0,0]} />
-                                   </BarChart>
-                               </ResponsiveContainer>
-                           </div>
-                           
-                           <div className="grid grid-cols-2 gap-4">
-                               <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-                                   <div className="text-gray-500 text-xs uppercase font-bold mb-1">Total Workouts</div>
-                                   <div className="text-3xl font-bold text-white">{history.length}</div>
-                               </div>
-                               <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-                                   <div className="text-gray-500 text-xs uppercase font-bold mb-1">Cals Burned</div>
-                                   <div className="text-3xl font-bold text-neon-blue">{history.reduce((a,b) => a + (b.caloriesBurned||0), 0)}</div>
-                               </div>
-                           </div>
-                       </div>
-                   </div>
-               );
+               // Simple Stats
+               const totalCals = workouts.reduce((a,b) => a + b.caloriesBurned, 0);
+               const totalWorkouts = workouts.length;
+               
+               // Chart Data
+               const last7Days = Array.from({length: 7}, (_, i) => {
+                   const d = new Date();
+                   d.setDate(d.getDate() - (6-i));
+                   return d.toISOString().split('T')[0];
+               });
+               const data = last7Days.map(date => ({
+                   name: date.slice(5),
+                   cals: workouts.filter(w => w.date.startsWith(date)).reduce((a,b) => a + b.caloriesBurned, 0)
+               }));
 
-          case Screen.PROFILE:
                return (
-                   <div className="p-6 pb-24">
-                       <div className="flex justify-between items-center mb-6">
-                           <h2 className="text-2xl font-bold text-white">Profile</h2>
-                           <button onClick={() => setShowSettings(true)} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-white"><Settings size={20}/></button>
+                   <div className="p-6 pb-24 space-y-6">
+                       <h2 className="text-2xl font-bold text-white">Your Progress</h2>
+                       <div className="grid grid-cols-2 gap-4">
+                           <div className="bg-white/5 p-4 rounded-2xl">
+                               <p className="text-gray-400 text-xs uppercase">Total Calories</p>
+                               <p className="text-2xl font-bold text-neon-green">{totalCals}</p>
+                           </div>
+                           <div className="bg-white/5 p-4 rounded-2xl">
+                               <p className="text-gray-400 text-xs uppercase">Total Sessions</p>
+                               <p className="text-2xl font-bold text-neon-blue">{totalWorkouts}</p>
+                           </div>
                        </div>
                        
-                       <div className="flex flex-col items-center mb-8">
-                           <div onClick={() => setShowAvatarSelect(true)} className="w-24 h-24 rounded-full bg-gray-800 border-2 border-neon-green overflow-hidden mb-4 relative cursor-pointer group">
-                               {user?.profileImage ? <img src={user.profileImage} className="w-full h-full object-cover" /> : <User size={40} className="text-gray-400 m-auto mt-6" />}
-                               <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                   <Edit2 className="text-white" size={20} />
-                               </div>
-                           </div>
-                           <h3 className="text-xl font-bold text-white">{user?.name}</h3>
-                           <p className="text-neon-green text-sm font-medium">{user?.isPro ? 'PRO MEMBER' : 'Free Plan'}</p>
-                       </div>
-
-                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
-                           <div className="flex justify-between items-center p-2 border-b border-white/5">
-                               <span className="text-gray-400">Streak</span>
-                               <span className="text-white font-bold flex items-center gap-2"><Flame className="text-orange-500" size={16}/> {user?.streak} days</span>
-                           </div>
-                           <div className="flex justify-between items-center p-2 border-b border-white/5">
-                               <span className="text-gray-400">Current Weight</span>
-                               <span className="text-white font-bold">{user?.weight} kg</span>
-                           </div>
-                           <div className="flex justify-between items-center p-2">
-                               <span className="text-gray-400">Height</span>
-                               <span className="text-white font-bold">{user?.height} cm</span>
-                           </div>
+                       <div className="h-64 w-full bg-white/5 rounded-2xl p-4">
+                           <h3 className="text-xs text-gray-400 mb-4">Last 7 Days (Kcal)</h3>
+                           <ResponsiveContainer width="100%" height="100%">
+                               <BarChart data={data}>
+                                   <XAxis dataKey="name" stroke="#666" fontSize={10} tickLine={false} axisLine={false} />
+                                   <Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} itemStyle={{color: '#fff'}} cursor={{fill: 'rgba(255,255,255,0.1)'}} />
+                                   <Bar dataKey="cals" fill="#ccff00" radius={[4, 4, 0, 0]} />
+                               </BarChart>
+                           </ResponsiveContainer>
                        </div>
                    </div>
                );
-
-          default: return null;
+          case Screen.PROFILE:
+              return (
+                  <div className="p-6 pb-24 space-y-6">
+                      <div className="flex flex-col items-center">
+                           <img src={user?.profileImage || AVATAR_PRESETS[0]} className="w-24 h-24 rounded-full border-2 border-neon-green mb-4 object-cover" />
+                           <h2 className="text-2xl font-bold">{user?.name}</h2>
+                           <p className="text-gray-400 text-sm">Member since {new Date(user?.joinDate || '').getFullYear()}</p>
+                      </div>
+                      
+                      <div className="bg-white/5 rounded-xl p-4">
+                          <h3 className="text-sm font-bold text-gray-400 mb-3 uppercase">Account</h3>
+                          <button onClick={() => setIsSettingsOpen(true)} className="w-full flex items-center justify-between p-3 hover:bg-white/5 rounded-lg transition-colors">
+                              <div className="flex items-center gap-3">
+                                  <Settings size={18} /> Settings
+                              </div>
+                              <ChevronRight size={16} className="text-gray-600" />
+                          </button>
+                           <button onClick={() => Storage.logout()} className="w-full flex items-center justify-between p-3 hover:bg-white/5 rounded-lg transition-colors text-red-500">
+                              <div className="flex items-center gap-3">
+                                  <LogOut size={18} /> Sign Out
+                              </div>
+                          </button>
+                      </div>
+                  </div>
+              );
+          default:
+              return null;
       }
   };
 
-  if (screen === Screen.SPLASH) return <SplashScreen onComplete={() => user ? setScreen(Screen.DASHBOARD) : setScreen(Screen.AUTH)} />;
-  
-  if (!user && screen !== Screen.SPLASH) return <AuthScreen onLoginSuccess={(u) => { setUser(u); setScreen(Screen.DASHBOARD); }} />;
-
   return (
-      <div className="h-screen w-full bg-black flex flex-col relative overflow-hidden font-sans">
-          {/* Main Content Scrollable Area */}
-          <div className="flex-grow overflow-y-auto no-scrollbar">
-              {renderScreen()}
-          </div>
-          
-          {/* Navigation Bar */}
-          <Navigation currentScreen={screen} onNavigate={(s) => { SoundService.playClick(); setScreen(s); }} />
-          
-          {/* Modals */}
-          <SettingsModal 
-              isOpen={showSettings} 
-              onClose={() => setShowSettings(false)} 
-              user={user!} 
-              isMuted={isMuted} 
-              onToggleSound={() => setIsMuted(!isMuted)} 
-              onResetStats={async () => {
-                  const u = await Storage.resetStats();
-                  if(u) setUser(u);
-                  setShowSettings(false);
-              }}
-          />
-          
-          <AvatarSelectionModal 
-              isOpen={showAvatarSelect} 
-              onClose={() => setShowAvatarSelect(false)}
-              onSelect={async (url) => {
-                  if(user) {
-                      await Storage.upsertProfile({ ...user, profileImage: url });
-                      setUser({ ...user, profileImage: url });
-                  }
-                  setShowAvatarSelect(false);
-              }}
-              onUploadClick={() => alert("File upload would go here!")}
-          />
-      </div>
+    <div className="bg-black min-h-screen text-white font-sans selection:bg-neon-green selection:text-black">
+      {renderScreen()}
+      <Navigation currentScreen={currentScreen} onNavigate={setCurrentScreen} />
+      
+      <SettingsModal 
+          isOpen={isSettingsOpen} 
+          onClose={() => setIsSettingsOpen(false)} 
+          user={user!}
+          isMuted={muted}
+          onToggleSound={() => { SoundService.setMuted(!muted); setMuted(!muted); }}
+          onResetStats={async () => {
+              const u = await Storage.resetStats();
+              if(u) { setUser(u); refreshData(); setIsSettingsOpen(false); }
+          }}
+      />
+      
+      <AvatarSelectionModal
+          isOpen={isAvatarOpen}
+          onClose={() => setIsAvatarOpen(false)}
+          onSelect={async (url) => {
+             if(user) {
+                 const updated = { ...user, profileImage: url };
+                 await Storage.upsertProfile(updated);
+                 setUser(updated);
+                 setIsAvatarOpen(false);
+             }
+          }}
+          onUploadClick={() => alert("Upload feature coming soon!")}
+      />
+    </div>
   );
 };
 
