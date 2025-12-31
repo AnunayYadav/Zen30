@@ -10,7 +10,7 @@ import { supabase } from './services/supabaseClient';
 import { 
   Play, Pause, StopCircle, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   User as UserIcon, LogOut, Settings, Share2, Camera, Lock, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, X, Volume2,
-  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2
+  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2, Calendar, Target, AlertTriangle
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
 
@@ -849,6 +849,17 @@ const ChallengeScreen: React.FC<{
   const [level, setLevel] = useState("Beginner");
   const [loading, setLoading] = useState(false);
   const [selectedDay, setSelectedDay] = useState<ChallengeTask | null>(null);
+  const [quote, setQuote] = useState<string>("Initializing AI Coach...");
+
+  // AI Quote Fetching
+  useEffect(() => {
+    if (state) {
+      // Reuse the cached tip from dashboard or fetch a new one if needed, keeping it consistent for the session
+      const cached = Storage.getDailyTip();
+      if (cached) setQuote(cached.text);
+      else generateMotivationalTip().then(setQuote);
+    }
+  }, [state]);
 
   // If no state or no plan, show creation screen
   if (!state || !state.plan || state.plan.length === 0) {
@@ -898,88 +909,119 @@ const ChallengeScreen: React.FC<{
       );
   }
 
-  // Active Challenge View
+  // Active Challenge View Calculations
   const completedCount = state.completedDays.length;
   const progress = Math.round((completedCount / 30) * 100);
+  
+  // Calculate which day we are on based on start date
+  const startDate = new Date(state.startDate);
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - startDate.getTime());
+  const currentDayIndex = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+  const currentDay = Math.min(Math.max(1, currentDayIndex), 30); // Clamp between 1 and 30
 
   return (
     <div className="h-full w-full bg-black p-6 pb-24 overflow-y-auto relative">
-      {/* Header */}
-      <div className="flex justify-between items-start mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-white leading-none mb-1">30-Day Protocol</h2>
-            <p className="text-neon-green text-xs font-mono truncate max-w-[200px]">{state.goal || "Custom Plan"}</p>
-          </div>
-          <button onClick={onReset} className="text-gray-600 hover:text-red-500 transition-colors p-2"><Trash2 size={18}/></button>
+      
+      {/* Hero Section: AI Mission Control */}
+      <div className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-gray-900 to-black border border-white/10 mb-6 shadow-lg shadow-neon-green/5">
+           <div className="absolute top-0 right-0 p-4 opacity-10 text-white"><Trophy size={120}/></div>
+           <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-neon-green/10 blur-3xl rounded-full pointer-events-none"></div>
+           
+           <div className="relative z-10">
+               <div className="flex justify-between items-start mb-4">
+                   <div className="bg-white/10 px-3 py-1 rounded-full text-[10px] font-bold text-neon-blue border border-neon-blue/30 uppercase tracking-widest flex items-center gap-2">
+                       <Target size={12} /> Mission Active
+                   </div>
+                   <button onClick={onReset} className="text-gray-600 hover:text-red-500 transition-colors p-1"><Trash2 size={16}/></button>
+               </div>
+               
+               <h1 className="text-4xl font-bold italic text-white mb-2">DAY {currentDay}</h1>
+               <div className="flex items-start gap-3 mt-4">
+                   <div className="mt-1"><BrainCircuit size={16} className="text-neon-green" /></div>
+                   <p className="text-gray-300 text-sm font-medium italic leading-relaxed">"{quote}"</p>
+               </div>
+           </div>
       </div>
 
-      {/* Progress Bar */}
-      <div className="mb-8">
-          <div className="flex justify-between text-xs mb-2">
-              <span className="text-gray-400">Progress</span>
-              <span className="text-white font-bold">{progress}%</span>
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 gap-3 mb-8">
+          <div className="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col justify-center items-center">
+              <span className="text-2xl font-bold text-white">{completedCount}</span>
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Missions Done</span>
           </div>
-          <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-              <div className="h-full bg-neon-green shadow-[0_0_10px_#ccff00] transition-all duration-500" style={{ width: `${progress}%` }}></div>
+          <div className="bg-white/5 rounded-2xl p-4 border border-white/5 flex flex-col justify-center items-center">
+              <span className="text-2xl font-bold text-white">{30 - completedCount}</span>
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Days Left</span>
           </div>
       </div>
 
-      {/* Calendar Grid */}
+      {/* Calendar Grid - Interactive Mission Select */}
+      <div className="mb-4 flex items-center justify-between">
+           <h3 className="text-white font-bold flex items-center gap-2"><Calendar size={18} className="text-neon-green"/> Protocol Grid</h3>
+           <span className="text-xs text-gray-500">{progress}% Complete</span>
+      </div>
+      
       <div className="grid grid-cols-5 gap-3">
           {state.plan.map((task) => {
               const isCompleted = state.completedDays.includes(task.day);
+              const isToday = task.day === currentDay;
+              const isPast = task.day < currentDay;
+              const isFuture = task.day > currentDay;
+              const isMissed = isPast && !isCompleted;
               const isRest = task.type === 'Rest';
-              // Lock future days logic: only unlock if previous day is done OR it's the very next day
-              const maxCompleted = Math.max(0, ...state.completedDays);
-              const isLocked = !isCompleted && task.day > maxCompleted + 1;
-              const isNext = task.day === maxCompleted + 1;
 
               return (
                   <button 
                       key={task.day} 
-                      onClick={() => !isLocked && setSelectedDay(task)}
-                      disabled={isLocked}
+                      onClick={() => setSelectedDay(task)}
                       className={`aspect-square rounded-xl flex flex-col items-center justify-center relative border transition-all duration-300
                           ${isCompleted 
                               ? 'bg-neon-green/20 border-neon-green text-neon-green' 
-                              : isLocked 
-                                  ? 'bg-gray-900 border-transparent text-gray-700 opacity-50'
-                                  : isRest 
-                                      ? 'bg-blue-900/20 border-blue-500/30 text-blue-400'
-                                      : 'bg-white/10 border-white text-white hover:bg-white/20'
+                              : isToday
+                                  ? 'bg-white/10 border-white text-white animate-pulse shadow-[0_0_15px_rgba(255,255,255,0.2)]'
+                                  : isMissed
+                                      ? 'bg-red-900/20 border-red-500/30 text-red-400'
+                                      : isRest 
+                                          ? 'bg-blue-900/10 border-blue-500/10 text-blue-400 opacity-70'
+                                          : 'bg-white/5 border-transparent text-gray-500 hover:border-white/20'
                           }
-                          ${isNext && !isCompleted ? 'animate-pulse ring-1 ring-white' : ''}
                       `}
                   >
-                      <span className="text-sm font-bold">{task.day}</span>
+                      <span className={`text-sm font-bold ${isFuture ? 'opacity-50' : ''}`}>{task.day}</span>
                       {isCompleted && <CheckCircle size={10} className="mt-1" />}
-                      {isLocked && <Lock size={10} className="mt-1" />}
-                      {!isLocked && !isCompleted && isRest && <span className="text-[8px] uppercase mt-1">Rest</span>}
+                      {isMissed && <AlertTriangle size={10} className="mt-1" />}
+                      {!isCompleted && isToday && <div className="w-1.5 h-1.5 bg-neon-green rounded-full mt-1 animate-ping"></div>}
+                      {!isCompleted && isFuture && <Lock size={10} className="mt-1 opacity-30" />}
                   </button>
               );
           })}
       </div>
 
-      {/* Day Detail Modal */}
+      {/* Mission Briefing Modal */}
       {selectedDay && (
-          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-              <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative max-h-[80vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
+              <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative max-h-[80vh] overflow-y-auto shadow-[0_0_50px_rgba(0,0,0,0.8)]">
                   <button onClick={() => setSelectedDay(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
                   
-                  <div className="mb-6">
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded mb-2 inline-block ${selectedDay.type === 'Rest' ? 'bg-blue-500/20 text-blue-400' : 'bg-neon-green/20 text-neon-green'}`}>
-                          DAY {selectedDay.day} • {selectedDay.type.toUpperCase()}
-                      </span>
+                  {/* Modal Header */}
+                  <div className="mb-6 border-b border-white/10 pb-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded inline-block ${selectedDay.type === 'Rest' ? 'bg-blue-500/20 text-blue-400' : 'bg-neon-green/20 text-neon-green'}`}>
+                            DAY {selectedDay.day}
+                        </span>
+                        {selectedDay.day > currentDay && <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-gray-400 flex items-center gap-1"><Lock size={8}/> CLASSIFIED</span>}
+                      </div>
                       <h2 className="text-2xl font-bold text-white mb-2">{selectedDay.title}</h2>
                       <p className="text-gray-400 text-sm italic">{selectedDay.description}</p>
                   </div>
 
                   {selectedDay.type !== 'Rest' && (
-                       <div className="bg-white/5 rounded-xl p-4 mb-6">
+                       <div className="bg-white/5 rounded-xl p-4 mb-6 border border-white/5">
                            <div className="flex items-center gap-2 mb-4 text-white font-bold text-sm"><Clock size={16} className="text-neon-blue"/> Duration: {selectedDay.duration}</div>
                            {selectedDay.instructions && selectedDay.instructions.length > 0 && (
                                <div className="space-y-3">
-                                   <div className="text-xs text-gray-500 uppercase tracking-widest">Protocol</div>
+                                   <div className="text-xs text-gray-500 uppercase tracking-widest flex items-center gap-2"><Activity size={12}/> Mission Objectives</div>
                                    {selectedDay.instructions.map((ins, i) => (
                                        <div key={i} className="flex gap-3 text-sm text-gray-300">
                                            <span className="text-neon-green font-mono">{i+1}.</span>
@@ -991,20 +1033,25 @@ const ChallengeScreen: React.FC<{
                        </div>
                   )}
 
-                  {!state.completedDays.includes(selectedDay.day) ? (
+                  {/* Actions */}
+                  {state.completedDays.includes(selectedDay.day) ? (
+                      <div className="w-full bg-white/10 text-gray-400 font-bold py-4 rounded-xl flex items-center justify-center gap-2 cursor-default border border-white/5">
+                          <CheckCircle size={20} className="text-neon-green" /> MISSION ACCOMPLISHED
+                      </div>
+                  ) : selectedDay.day > currentDay ? (
+                       <button disabled className="w-full bg-gray-800 text-gray-500 font-bold py-4 rounded-xl flex items-center justify-center gap-2 cursor-not-allowed opacity-50">
+                          <Lock size={18} /> LOCKED UNTIL DAY {selectedDay.day}
+                       </button>
+                  ) : (
                       <button 
                           onClick={async () => {
                               await onCompleteDay(selectedDay.day);
                               setSelectedDay(null);
                           }}
-                          className="w-full bg-neon-green text-black font-bold py-4 rounded-xl hover:scale-105 transition-transform flex items-center justify-center gap-2"
+                          className="w-full bg-neon-green text-black font-bold py-4 rounded-xl hover:scale-105 hover:shadow-[0_0_20px_rgba(204,255,0,0.4)] transition-all flex items-center justify-center gap-2"
                       >
-                          <CheckCircle size={20} /> MARK COMPLETE
+                          <CheckCircle size={20} /> COMPLETE MISSION
                       </button>
-                  ) : (
-                      <div className="w-full bg-white/10 text-gray-400 font-bold py-4 rounded-xl flex items-center justify-center gap-2 cursor-default">
-                          <CheckCircle size={20} className="text-neon-green" /> COMPLETED
-                      </div>
                   )}
               </div>
           </div>
