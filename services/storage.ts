@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { UserProfile, WorkoutSession, HabitLog, ChallengeState } from '../types';
+import { UserProfile, WorkoutSession, HabitLog, ChallengeState, ChallengeTask } from '../types';
 import { PRODUCTION_URL } from './config';
 
 export const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -196,34 +196,51 @@ export const Storage = {
     return await Storage.getHabits();
   },
 
-  // --- Challenge ---
+  // --- Challenge (AI Enhanced) ---
 
   getChallenge: async (): Promise<ChallengeState | null> => {
-    const { data, error } = await supabase.from('challenges').select('*').maybeSingle();
-    if (error || !data) return null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    // 1. Fetch Cloud Progress
+    const { data: cloudData } = await supabase.from('challenges').select('*').maybeSingle();
+    
+    // 2. Fetch Local Plan (Since DB might not support JSON plan column)
+    const localPlanStr = localStorage.getItem(`zen30_plan_${user.id}`);
+    const localGoal = localStorage.getItem(`zen30_goal_${user.id}`);
+
+    if (!cloudData && !localPlanStr) return null;
 
     return {
-      startDate: data.start_date,
-      completedDays: data.completed_days || []
+      startDate: cloudData?.start_date || new Date().toISOString(),
+      completedDays: cloudData?.completed_days || [],
+      goal: localGoal || undefined,
+      plan: localPlanStr ? JSON.parse(localPlanStr) : undefined
     };
   },
 
-  initChallenge: async (startDate?: string) => {
-    const start = startDate || new Date().toISOString();
+  initChallenge: async (plan: ChallengeTask[], goal: string) => {
+    const start = new Date().toISOString();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { startDate: '', completedDays: [] };
-    
+    if (!user) return null;
+
+    // Save plan locally
+    localStorage.setItem(`zen30_plan_${user.id}`, JSON.stringify(plan));
+    localStorage.setItem(`zen30_goal_${user.id}`, goal);
+
+    // Save progress start to cloud
     await supabase.from('challenges').upsert({
         user_id: user.id,
         start_date: start,
         completed_days: []
       });
-    return { startDate: start, completedDays: [] };
+      
+    return { startDate: start, completedDays: [], goal, plan };
   },
 
   completeChallengeDay: async (day: number) => {
     const current = await Storage.getChallenge();
-    if (!current) return await Storage.initChallenge();
+    if (!current) return null; // Should not happen
 
     if (!current.completedDays.includes(day)) {
       const newDays = [...current.completedDays, day];
@@ -236,6 +253,16 @@ export const Storage = {
       return newState;
     }
     return current;
+  },
+
+  resetChallenge: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if(user) {
+      await supabase.from('challenges').delete().eq('user_id', user.id);
+      localStorage.removeItem(`zen30_plan_${user.id}`);
+      localStorage.removeItem(`zen30_goal_${user.id}`);
+    }
+    return null;
   },
 
   // --- Passive Steps ---

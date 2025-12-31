@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Navigation } from './components/Navigation';
-import { Screen, Workout, WorkoutSession, UserProfile, HabitLog, ChallengeState, Habit, WorkoutCategory, WorkoutSegment } from './types';
-import { generateMotivationalTip, generateWorkoutVisualization, generateWorkoutPlan } from './services/geminiService';
+import { Screen, Workout, WorkoutSession, UserProfile, HabitLog, ChallengeState, Habit, WorkoutCategory, WorkoutSegment, ChallengeTask } from './types';
+import { generateMotivationalTip, generateWorkoutVisualization, generateWorkoutPlan, generate30DayChallenge } from './services/geminiService';
 import { Storage, getTodayStr } from './services/storage';
 import { SoundService } from './services/soundService';
 import { PedometerService } from './services/pedometer';
 import { WORKOUT_DB } from './services/workoutData';
-import { CHALLENGE_DB } from './services/challengeData';
 import { supabase } from './services/supabaseClient';
 import { 
   Play, Pause, StopCircle, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   User as UserIcon, LogOut, Settings, Share2, Camera, Lock, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, X, Volume2,
-  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff
+  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
 
@@ -645,29 +644,39 @@ const App: React.FC = () => {
      await Storage.saveHabitValue(id, val);
   };
 
-  const handleStartChallenge = async () => {
-      // Starting a challenge is a big event, keeping playStart.
+  const handleCreateChallenge = async (goal: string, level: string) => {
       SoundService.playStart();
-      const newState = await Storage.initChallenge();
+      const plan = await generate30DayChallenge(goal, level);
+      const newState = await Storage.initChallenge(plan, goal);
       setChallenge(newState);
   };
 
   const handleCompleteChallengeDay = async (day: number) => {
-      // Completing a day is definitely a "success" moment like finishing a workout.
       SoundService.playSuccess();
       const newState = await Storage.completeChallengeDay(day);
-      setChallenge({...newState});
-      // Log as workout
-      const session: WorkoutSession = {
-          id: Date.now().toString(),
-          date: new Date().toISOString(),
-          type: 'Workout',
-          durationSeconds: 45 * 60,
-          caloriesBurned: 350,
-          category: 'Challenge'
-      };
-      const newHistory = await Storage.saveSession(session);
-      setHistory(newHistory);
+      if (newState) setChallenge({...newState});
+      
+      // Log as workout automatically
+      const task = challenge?.plan?.find(p => p.day === day);
+      if (task && task.type !== 'Rest') {
+          const session: WorkoutSession = {
+              id: Date.now().toString(),
+              date: new Date().toISOString(),
+              type: 'Workout',
+              durationSeconds: parseInt(task.duration || "30") * 60,
+              caloriesBurned: task.type === 'Active Recovery' ? 150 : 350,
+              category: 'Challenge'
+          };
+          const newHistory = await Storage.saveSession(session);
+          setHistory(newHistory);
+      }
+  };
+
+  const handleResetChallenge = async () => {
+      if(window.confirm("Are you sure? This will delete your current 30-day progress.")) {
+          await Storage.resetChallenge();
+          setChallenge(null);
+      }
   };
 
   const renderContent = () => {
@@ -683,7 +692,7 @@ const App: React.FC = () => {
             />;
           case Screen.WORKOUTS: return <WorkoutSelectionScreen onStartWorkout={(w) => { setActiveWorkout(w); setActiveSessionMode('Workout'); }} />;
           case Screen.RUNNING:  setActiveSessionMode('Run'); return null; // Immediately switches to session overlay
-          case Screen.CHALLENGE: return <ChallengeScreen state={challenge} onInit={handleStartChallenge} onCompleteDay={handleCompleteChallengeDay} />;
+          case Screen.CHALLENGE: return <ChallengeScreen state={challenge} onCreate={handleCreateChallenge} onCompleteDay={handleCompleteChallengeDay} onReset={handleResetChallenge} />;
           case Screen.HABITS: return <HabitTrackerScreen habits={habits} onUpdateHabit={handleUpdateHabit} />;
           case Screen.PROGRESS: return <ProgressScreen history={history} user={user!} />;
           case Screen.PROFILE: return <ProfileScreen 
@@ -830,21 +839,176 @@ const WorkoutSelectionScreen: React.FC<{ onStartWorkout: (w: Workout) => void }>
   );
 };
 
-const ChallengeScreen: React.FC<{ state: ChallengeState | null, onInit: () => void, onCompleteDay: (day: number) => void }> = ({ state, onInit, onCompleteDay }) => {
-  if (!state) return <div className="h-full flex flex-col items-center justify-center bg-black p-8 text-center"><Trophy size={64} className="text-neon-green mb-6 animate-bounce" /><h2 className="text-3xl font-bold text-white mb-4">30-Day Grind</h2><button onClick={onInit} className="bg-neon-green text-black font-bold py-4 px-12 rounded-full hover:scale-105 transition-transform">Start Challenge</button></div>;
+const ChallengeScreen: React.FC<{ 
+  state: ChallengeState | null, 
+  onCreate: (goal: string, level: string) => Promise<void>,
+  onCompleteDay: (day: number) => Promise<void>,
+  onReset: () => Promise<void>
+}> = ({ state, onCreate, onCompleteDay, onReset }) => {
+  const [goal, setGoal] = useState("");
+  const [level, setLevel] = useState("Beginner");
+  const [loading, setLoading] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<ChallengeTask | null>(null);
+
+  // If no state or no plan, show creation screen
+  if (!state || !state.plan || state.plan.length === 0) {
+      return (
+          <div className="h-full w-full bg-black p-6 flex flex-col justify-center relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-neon-green/5 to-black pointer-events-none" />
+              <BrainCircuit className="text-neon-green w-16 h-16 mb-4 animate-pulse mx-auto" />
+              <h2 className="text-3xl font-bold text-white mb-2 text-center">AI Coach</h2>
+              <p className="text-gray-400 text-center mb-8 text-sm">Tell Gemini your goal. Get a custom 30-day plan.</p>
+              
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-md z-10">
+                  <label className="text-xs text-neon-blue font-bold uppercase tracking-wider mb-2 block">Your Goal</label>
+                  <textarea 
+                      value={goal} 
+                      onChange={(e) => setGoal(e.target.value)}
+                      placeholder="e.g. Lose 5kg, Learn to do a split, Run a marathon..."
+                      className="w-full bg-black/50 border border-white/20 rounded-xl p-4 text-white placeholder-gray-600 focus:border-neon-green outline-none h-24 resize-none mb-6"
+                  />
+                  
+                  <label className="text-xs text-neon-blue font-bold uppercase tracking-wider mb-2 block">Intensity Level</label>
+                  <div className="grid grid-cols-3 gap-2 mb-8">
+                      {['Beginner', 'Intermediate', 'Advanced'].map(l => (
+                          <button 
+                              key={l}
+                              onClick={() => setLevel(l)}
+                              className={`py-3 rounded-xl text-xs font-bold border transition-all ${level === l ? 'bg-neon-green text-black border-neon-green' : 'bg-black/50 text-gray-400 border-white/10'}`}
+                          >
+                              {l}
+                          </button>
+                      ))}
+                  </div>
+
+                  <button 
+                      onClick={async () => {
+                          if(!goal.trim()) return;
+                          setLoading(true);
+                          await onCreate(goal, level);
+                          setLoading(false);
+                      }}
+                      disabled={loading || !goal.trim()}
+                      className="w-full bg-neon-green text-black font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:shadow-[0_0_20px_rgba(204,255,0,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                      {loading ? <Loader2 className="animate-spin" /> : <><Sparkles size={18} /> GENERATE PLAN</>}
+                  </button>
+              </div>
+          </div>
+      );
+  }
+
+  // Active Challenge View
   const completedCount = state.completedDays.length;
   const progress = Math.round((completedCount / 30) * 100);
+
   return (
-    <div className="h-full w-full bg-black p-6 pb-24 overflow-y-auto">
-      <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-white">Challenge</h2><div className="text-right"><div className="text-neon-green font-bold text-lg">{progress}%</div><div className="text-gray-500 text-xs uppercase">Completed</div></div></div>
-      <div className="w-full h-2 bg-gray-800 rounded-full mb-8 overflow-hidden"><div className="h-full bg-neon-green shadow-[0_0_10px_#ccff00]" style={{ width: `${progress}%` }}></div></div>
-      <div className="grid grid-cols-5 gap-3">{CHALLENGE_DB.map((task) => {
-          const isCompleted = state.completedDays.includes(task.day);
-          const isLocked = !isCompleted && task.day > (Math.max(...state.completedDays, 0) + 1);
-          const isCurrent = !isCompleted && !isLocked;
-          return <button key={task.day} disabled={isLocked || isCompleted} onClick={() => { if(isCurrent && window.confirm(`Start Day ${task.day}?`)) onCompleteDay(task.day); }} className={`aspect-square rounded-xl flex flex-col items-center justify-center relative border transition-all ${isCompleted ? 'bg-neon-green/20 border-neon-green text-neon-green' : isCurrent ? 'bg-white/10 border-white text-white animate-pulse' : 'bg-gray-900 border-transparent text-gray-700 opacity-50'}`}><span className="text-lg font-bold">{task.day}</span>{isCompleted && <CheckCircle size={12} className="mt-1" />}{isLocked && <Lock size={12} className="mt-1" />}</button>;
-        })}</div>
-      <div className="mt-8 p-4 bg-white/5 rounded-xl border border-white/10"><h3 className="text-white font-bold mb-2">Current Focus</h3><p className="text-gray-400 text-sm">{CHALLENGE_DB.find(d => d.day === (Math.max(...state.completedDays, 0) + 1))?.description || "Challenge Complete!"}</p></div>
+    <div className="h-full w-full bg-black p-6 pb-24 overflow-y-auto relative">
+      {/* Header */}
+      <div className="flex justify-between items-start mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-white leading-none mb-1">30-Day Protocol</h2>
+            <p className="text-neon-green text-xs font-mono truncate max-w-[200px]">{state.goal || "Custom Plan"}</p>
+          </div>
+          <button onClick={onReset} className="text-gray-600 hover:text-red-500 transition-colors p-2"><Trash2 size={18}/></button>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="mb-8">
+          <div className="flex justify-between text-xs mb-2">
+              <span className="text-gray-400">Progress</span>
+              <span className="text-white font-bold">{progress}%</span>
+          </div>
+          <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-full bg-neon-green shadow-[0_0_10px_#ccff00] transition-all duration-500" style={{ width: `${progress}%` }}></div>
+          </div>
+      </div>
+
+      {/* Calendar Grid */}
+      <div className="grid grid-cols-5 gap-3">
+          {state.plan.map((task) => {
+              const isCompleted = state.completedDays.includes(task.day);
+              const isRest = task.type === 'Rest';
+              // Lock future days logic: only unlock if previous day is done OR it's the very next day
+              const maxCompleted = Math.max(0, ...state.completedDays);
+              const isLocked = !isCompleted && task.day > maxCompleted + 1;
+              const isNext = task.day === maxCompleted + 1;
+
+              return (
+                  <button 
+                      key={task.day} 
+                      onClick={() => !isLocked && setSelectedDay(task)}
+                      disabled={isLocked}
+                      className={`aspect-square rounded-xl flex flex-col items-center justify-center relative border transition-all duration-300
+                          ${isCompleted 
+                              ? 'bg-neon-green/20 border-neon-green text-neon-green' 
+                              : isLocked 
+                                  ? 'bg-gray-900 border-transparent text-gray-700 opacity-50'
+                                  : isRest 
+                                      ? 'bg-blue-900/20 border-blue-500/30 text-blue-400'
+                                      : 'bg-white/10 border-white text-white hover:bg-white/20'
+                          }
+                          ${isNext && !isCompleted ? 'animate-pulse ring-1 ring-white' : ''}
+                      `}
+                  >
+                      <span className="text-sm font-bold">{task.day}</span>
+                      {isCompleted && <CheckCircle size={10} className="mt-1" />}
+                      {isLocked && <Lock size={10} className="mt-1" />}
+                      {!isLocked && !isCompleted && isRest && <span className="text-[8px] uppercase mt-1">Rest</span>}
+                  </button>
+              );
+          })}
+      </div>
+
+      {/* Day Detail Modal */}
+      {selectedDay && (
+          <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-neon-card border border-white/10 w-full max-w-sm rounded-3xl p-6 relative max-h-[80vh] overflow-y-auto">
+                  <button onClick={() => setSelectedDay(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24} /></button>
+                  
+                  <div className="mb-6">
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded mb-2 inline-block ${selectedDay.type === 'Rest' ? 'bg-blue-500/20 text-blue-400' : 'bg-neon-green/20 text-neon-green'}`}>
+                          DAY {selectedDay.day} • {selectedDay.type.toUpperCase()}
+                      </span>
+                      <h2 className="text-2xl font-bold text-white mb-2">{selectedDay.title}</h2>
+                      <p className="text-gray-400 text-sm italic">{selectedDay.description}</p>
+                  </div>
+
+                  {selectedDay.type !== 'Rest' && (
+                       <div className="bg-white/5 rounded-xl p-4 mb-6">
+                           <div className="flex items-center gap-2 mb-4 text-white font-bold text-sm"><Clock size={16} className="text-neon-blue"/> Duration: {selectedDay.duration}</div>
+                           {selectedDay.instructions && selectedDay.instructions.length > 0 && (
+                               <div className="space-y-3">
+                                   <div className="text-xs text-gray-500 uppercase tracking-widest">Protocol</div>
+                                   {selectedDay.instructions.map((ins, i) => (
+                                       <div key={i} className="flex gap-3 text-sm text-gray-300">
+                                           <span className="text-neon-green font-mono">{i+1}.</span>
+                                           <span>{ins}</span>
+                                       </div>
+                                   ))}
+                               </div>
+                           )}
+                       </div>
+                  )}
+
+                  {!state.completedDays.includes(selectedDay.day) ? (
+                      <button 
+                          onClick={async () => {
+                              await onCompleteDay(selectedDay.day);
+                              setSelectedDay(null);
+                          }}
+                          className="w-full bg-neon-green text-black font-bold py-4 rounded-xl hover:scale-105 transition-transform flex items-center justify-center gap-2"
+                      >
+                          <CheckCircle size={20} /> MARK COMPLETE
+                      </button>
+                  ) : (
+                      <div className="w-full bg-white/10 text-gray-400 font-bold py-4 rounded-xl flex items-center justify-center gap-2 cursor-default">
+                          <CheckCircle size={20} className="text-neon-green" /> COMPLETED
+                      </div>
+                  )}
+              </div>
+          </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import { GoogleGenAI, Modality, Type } from "@google/genai";
-import { WorkoutSegment } from "../types";
+import { WorkoutSegment, ChallengeTask } from "../types";
 import { GEMINI_API_KEY } from "./config";
 
 // Use the API key exported from our robust config
@@ -96,6 +96,59 @@ export const generateWorkoutPlan = async (title: string, durationStr: string, di
       { name: "Burpees", type: "exercise", duration: 30, reps: "Max effort" },
       { name: "Cooldown", type: "exercise", duration: 60, reps: "Stretch" }
     ];
+  }
+};
+
+export const generate30DayChallenge = async (goal: string, level: string): Promise<ChallengeTask[]> => {
+  try {
+    const prompt = `Create a progressive 30-day fitness challenge schedule for a user whose goal is: "${goal}" and fitness level is: "${level}".
+    Include Rest days (every 5-7 days) and Active Recovery days.
+    Return a strict JSON array of 30 objects.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              day: { type: Type.INTEGER },
+              title: { type: Type.STRING },
+              description: { type: Type.STRING },
+              type: { type: Type.STRING, enum: ['Workout', 'Rest', 'Active Recovery'] },
+              duration: { type: Type.STRING },
+              instructions: { 
+                type: Type.ARRAY, 
+                items: { type: Type.STRING },
+                description: "List of 3-5 key exercises or tips for the day"
+              }
+            },
+            required: ['day', 'title', 'type', 'duration', 'description']
+          }
+        }
+      }
+    });
+
+    let text = response.text || "[]";
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const plan = JSON.parse(text);
+    // Ensure days are numbered 1-30 just in case
+    return plan.map((p: any, idx: number) => ({ ...p, day: idx + 1 }));
+
+  } catch (e) {
+    console.error("Challenge Gen Error", e);
+    // Fallback to static data if AI fails
+    return Array.from({ length: 30 }, (_, i) => ({
+      day: i + 1,
+      title: "Full Body Burn",
+      description: "Fallback workout due to AI connection issue.",
+      type: "Workout",
+      duration: "30 min",
+      instructions: ["Pushups", "Squats", "Plank"]
+    }));
   }
 };
 

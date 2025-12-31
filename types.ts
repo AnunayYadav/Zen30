@@ -82,11 +82,14 @@ export interface ChallengeTask {
   description: string;
   type: 'Workout' | 'Rest' | 'Active Recovery';
   duration?: string;
+  instructions?: string[]; // Specific exercises for AI plan
 }
 
 export interface ChallengeState {
   startDate: string; // ISO String of when challenge started
   completedDays: number[]; // Array of day numbers (1-30) completed
+  goal?: string; // The user's prompt
+  plan?: ChallengeTask[]; // The AI generated 30 day plan
 }
 
 export interface WorkoutSegment {
