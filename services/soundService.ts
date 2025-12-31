@@ -1,6 +1,7 @@
 // synthesized audio context to avoid external asset dependencies
 const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
 let audioCtx: AudioContext | null = null;
+let isMuted = false;
 
 const getCtx = () => {
   if (!audioCtx) audioCtx = new AudioContextClass();
@@ -8,6 +9,7 @@ const getCtx = () => {
 };
 
 const playTone = (freq: number, type: OscillatorType, duration: number, vol = 0.1) => {
+  if (isMuted) return;
   const ctx = getCtx();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -26,9 +28,12 @@ const playTone = (freq: number, type: OscillatorType, duration: number, vol = 0.
 };
 
 export const SoundService = {
+  setMuted: (muted: boolean) => { isMuted = muted; },
+  isMuted: () => isMuted,
   playTick: () => playTone(800, 'sine', 0.1, 0.05),
   playCountdown: () => playTone(600, 'square', 0.15, 0.05),
   playStart: () => {
+    if (isMuted) return;
     const ctx = getCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -42,6 +47,7 @@ export const SoundService = {
     osc.stop(ctx.currentTime + 0.3);
   },
   playSuccess: () => {
+    if (isMuted) return;
     // Victory arpeggio
     setTimeout(() => playTone(523.25, 'sine', 0.2, 0.1), 0);
     setTimeout(() => playTone(659.25, 'sine', 0.2, 0.1), 100);

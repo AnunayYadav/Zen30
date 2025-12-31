@@ -9,8 +9,8 @@ import { WORKOUT_DB } from './services/workoutData';
 import { supabase } from './services/supabaseClient';
 import { 
   Play, Pause, StopCircle, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
-  User as UserIcon, LogOut, Settings, Share2, Camera, Lock, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, X, Volume2,
-  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw
+  User as UserIcon, LogOut, Settings, Share2, Camera, Lock, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, X, Volume2, VolumeX,
+  Monitor, ChevronRight, SkipForward, BrainCircuit, WifiOff, Send, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, YAxis } from 'recharts';
 
@@ -105,7 +105,16 @@ const AuthScreen: React.FC<{ onLoginSuccess: (user: UserProfile) => void }> = ({
   );
 };
 
-const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, user: UserProfile }> = ({ isOpen, onClose, user }) => {
+interface SettingsModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    user: UserProfile;
+    isMuted: boolean;
+    onToggleSound: () => void;
+    onResetStats: () => void;
+}
+
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, user, isMuted, onToggleSound, onResetStats }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black/90 z-50 flex items-end sm:items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -116,24 +125,25 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, user: User
         <div className="space-y-4">
           <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
              <div className="flex items-center gap-3">
-               <Volume2 className="text-neon-green" size={20} />
+               {isMuted ? <VolumeX className="text-gray-400" size={20} /> : <Volume2 className="text-neon-green" size={20} />}
                <span>Sound Effects</span>
              </div>
-             <div className="w-10 h-6 bg-neon-green rounded-full relative"><div className="absolute right-1 top-1 w-4 h-4 bg-black rounded-full shadow"></div></div>
+             <button onClick={onToggleSound} className={`w-10 h-6 rounded-full relative transition-colors ${isMuted ? 'bg-gray-700' : 'bg-neon-green'}`}>
+                 <div className={`absolute top-1 w-4 h-4 bg-black rounded-full shadow transition-all ${isMuted ? 'left-1' : 'right-1'}`}></div>
+             </button>
           </div>
-          <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl opacity-50">
-             <div className="flex items-center gap-3">
-               <Clock className="text-neon-blue" size={20} />
-               <span>Notifications</span>
-             </div>
-             <span className="text-xs text-gray-500">Coming Soon</span>
-          </div>
+          
           <div className="p-4 bg-white/5 rounded-xl">
             <h3 className="text-xs text-gray-400 uppercase mb-2">Account</h3>
             <p className="text-white font-medium">{user.email}</p>
             <p className="text-gray-500 text-xs">User ID: {user.id.slice(0,8)}...</p>
           </div>
-          <div className="text-center text-gray-600 text-xs mt-4">v1.0.0 • Zen30</div>
+
+          <button onClick={onResetStats} className="w-full p-4 bg-red-900/20 border border-red-500/20 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-900/30 transition-colors">
+              <Trash2 size={18} /> Reset All Stats
+          </button>
+
+          <div className="text-center text-gray-600 text-xs mt-4">v1.1.0 • Zen30</div>
         </div>
       </div>
     </div>
@@ -463,6 +473,10 @@ const App: React.FC = () => {
   const [passiveSteps, setPassiveSteps] = useState(0);
   const [pedometerActive, setPedometerActive] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+
+  // Settings & Preferences
+  const [habitDefs, setHabitDefs] = useState<Habit[]>(DEFAULT_HABITS);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   
   // Track last loaded user to prevent redundant loading screens on focus/reconnect
   const lastLoadedUserId = useRef<string | null>(null);
@@ -474,10 +488,36 @@ const App: React.FC = () => {
   // Modals
   const [showSettings, setShowSettings] = useState(false);
 
+  // Init Sound Preference
+  useEffect(() => {
+     const storedSound = localStorage.getItem('zen30_sound');
+     const isEnabled = storedSound !== 'false';
+     setSoundEnabled(isEnabled);
+     SoundService.setMuted(!isEnabled);
+  }, []);
+
+  const handleToggleSound = () => {
+      const newState = !soundEnabled;
+      setSoundEnabled(newState);
+      SoundService.setMuted(!newState);
+      localStorage.setItem('zen30_sound', String(newState));
+  };
+
+  const handleResetStats = async () => {
+      if(window.confirm("Are you sure? This will delete ALL workout history, habits, and step data. This cannot be undone.")) {
+         await Storage.resetStats();
+         setHistory([]);
+         setHabits({});
+         setPassiveSteps(0);
+         setChallenge(null);
+         setUser(prev => prev ? ({...prev, streak: 0, weightHistory: []}) : null);
+         alert("Stats reset.");
+         setShowSettings(false);
+      }
+  };
+
   // Auth Listener
   useEffect(() => {
-    // Note: Manual hash cleaning has been removed to avoid conflicts with Supabase Auth handling.
-
     const { data: { subscription } } = Storage.onAuthStateChange(async (session) => {
       if (session) {
         // If we have already loaded data for this specific user ID, skip the blocking loader.
@@ -490,6 +530,14 @@ const App: React.FC = () => {
         try {
           const userId = session.user.id;
           lastLoadedUserId.current = userId; // Mark as loaded
+          
+          // Load User Habits
+          const storedHabits = localStorage.getItem(`zen30_habit_defs_${userId}`);
+          if (storedHabits) {
+              setHabitDefs(JSON.parse(storedHabits));
+          } else {
+              setHabitDefs(DEFAULT_HABITS);
+          }
           
           // Attempt to fetch profile
           let profile = await Storage.getUserProfile(userId);
@@ -532,6 +580,14 @@ const App: React.FC = () => {
               setHabits(habitsLog);
               setChallenge(ch);
               setPassiveSteps(steps);
+
+              // Default Screen Logic: If challenge exists and is active, go to Challenge screen
+              if (ch && ch.plan && ch.plan.length > 0) {
+                  setCurrentScreen(Screen.CHALLENGE);
+              } else {
+                  setCurrentScreen(Screen.DASHBOARD);
+              }
+
           } catch (dataErr) {
               console.warn("Partial data load failure", dataErr);
               // Fallback default values
@@ -539,9 +595,9 @@ const App: React.FC = () => {
               setHabits({});
               setChallenge(null);
               setPassiveSteps(0);
+              setCurrentScreen(Screen.DASHBOARD);
           }
           
-          setCurrentScreen(Screen.DASHBOARD);
         } catch (e) {
           console.error("Critical Data load error", e);
           lastLoadedUserId.current = null; // Reset on critical error so we can retry
@@ -570,9 +626,6 @@ const App: React.FC = () => {
         // No session
         lastLoadedUserId.current = null;
         setUser(null);
-        // Only force screen to AUTH if we aren't already on splash or auth
-        // This prevents overwriting the splash screen logic if it's still running
-        // But for "redirect to login" issues, explicitly ensuring AUTH is fine if we really are logged out.
         if (currentScreen !== Screen.SPLASH) {
              setCurrentScreen(Screen.AUTH);
         }
@@ -580,7 +633,7 @@ const App: React.FC = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, []); // Remove dependency on currentScreen to avoid loops
+  }, []); 
 
   const calculatedStreak = useMemo(() => {
     if (history.length === 0) return 0;
@@ -613,7 +666,7 @@ const App: React.FC = () => {
   // Handlers
   const handleLogout = () => {
     Storage.logout();
-    setCurrentScreen(Screen.AUTH); // Immediate feedback
+    setCurrentScreen(Screen.AUTH); 
   };
 
   const handleShare = async () => {
@@ -652,9 +705,29 @@ const App: React.FC = () => {
          newLog[today][id] = val;
          return newLog;
      });
-     // Removed success sound here to be less annoying, unless it's a big milestone? 
-     // For now, silent update as per "just add to the workout section timer".
      await Storage.saveHabitValue(id, val);
+  };
+
+  const handleAddHabit = (name: string) => {
+      if(!user) return;
+      const newHabit: Habit = {
+          id: `h${Date.now()}`,
+          name: name,
+          icon: '✨',
+          type: 'toggle'
+      };
+      const newDefs = [...habitDefs, newHabit];
+      setHabitDefs(newDefs);
+      localStorage.setItem(`zen30_habit_defs_${user.id}`, JSON.stringify(newDefs));
+  };
+
+  const handleDeleteHabit = (id: string) => {
+      if(!user) return;
+      if(window.confirm("Remove this habit?")) {
+          const newDefs = habitDefs.filter(h => h.id !== id);
+          setHabitDefs(newDefs);
+          localStorage.setItem(`zen30_habit_defs_${user.id}`, JSON.stringify(newDefs));
+      }
   };
 
   const handleCreateChallenge = async (goal: string, level: string) => {
@@ -678,7 +751,6 @@ const App: React.FC = () => {
       const newState = await Storage.completeChallengeDay(day);
       if (newState) setChallenge({...newState});
       
-      // Log as workout automatically
       const task = challenge?.plan?.find(p => p.day === day);
       if (task && task.type !== 'Rest') {
           const session: WorkoutSession = {
@@ -721,9 +793,9 @@ const App: React.FC = () => {
                 onEnablePedometer={handleEnablePedometer} pedometerActive={pedometerActive}
             />;
           case Screen.WORKOUTS: return <WorkoutSelectionScreen onStartWorkout={(w) => { setActiveWorkout(w); setActiveSessionMode('Workout'); }} />;
-          case Screen.RUNNING:  setActiveSessionMode('Run'); return null; // Immediately switches to session overlay
+          case Screen.RUNNING:  setActiveSessionMode('Run'); return null; 
           case Screen.CHALLENGE: return <ChallengeScreen state={challenge} onCreate={handleCreateChallenge} onModify={handleModifyChallenge} onCompleteDay={handleCompleteChallengeDay} onDelete={handleDeleteChallenge} onRestart={handleRestartChallenge} />;
-          case Screen.HABITS: return <HabitTrackerScreen habits={habits} onUpdateHabit={handleUpdateHabit} />;
+          case Screen.HABITS: return <HabitTrackerScreen habits={habits} habitDefs={habitDefs} onUpdateHabit={handleUpdateHabit} onAddHabit={handleAddHabit} onDeleteHabit={handleDeleteHabit} />;
           case Screen.PROGRESS: return <ProgressScreen history={history} user={user!} />;
           case Screen.PROFILE: return <ProfileScreen 
                 user={user!} history={history} streak={calculatedStreak} 
@@ -735,7 +807,9 @@ const App: React.FC = () => {
                     await Storage.upsertProfile(updated);
                 }} 
                 onUpdateImage={async (img) => {
-                    // Placeholder for image update logic
+                    const updated = { ...user!, profileImage: img };
+                    setUser(updated);
+                    await Storage.upsertProfile(updated);
                 }}
                 onOpenSettings={() => { setShowSettings(true); }}
                 onShare={handleShare}
@@ -756,7 +830,14 @@ const App: React.FC = () => {
           <>
             {renderContent()}
             <Navigation currentScreen={currentScreen} onNavigate={(s) => { setCurrentScreen(s); }} />
-            <SettingsModal isOpen={showSettings} onClose={() => { setShowSettings(false); }} user={user} />
+            <SettingsModal 
+                isOpen={showSettings} 
+                onClose={() => { setShowSettings(false); }} 
+                user={user} 
+                isMuted={!soundEnabled}
+                onToggleSound={handleToggleSound}
+                onResetStats={handleResetStats}
+            />
           </>
       )}
 
@@ -1142,16 +1223,55 @@ const ChallengeScreen: React.FC<{
   );
 };
 
-const HabitTrackerScreen: React.FC<{ habits: HabitLog, onUpdateHabit: (id: string, val: number | boolean) => void }> = ({ habits, onUpdateHabit }) => {
+const HabitTrackerScreen: React.FC<{ 
+    habits: HabitLog, 
+    habitDefs: Habit[], 
+    onUpdateHabit: (id: string, val: number | boolean) => void,
+    onAddHabit: (name: string) => void,
+    onDeleteHabit: (id: string) => void
+}> = ({ habits, habitDefs, onUpdateHabit, onAddHabit, onDeleteHabit }) => {
   const today = getTodayStr();
-  const completedCount = DEFAULT_HABITS.filter(h => habits[today]?.[h.id]).length;
+  const completedCount = habitDefs.filter(h => habits[today]?.[h.id]).length;
+  
   return (
     <div className="h-full w-full bg-black p-6 pb-24 overflow-y-auto">
-      <div className="flex items-center justify-between mb-8"><h2 className="text-3xl font-bold text-white">Habits</h2><div className="bg-white/10 px-4 py-2 rounded-full text-sm font-bold text-neon-blue">{completedCount}/{DEFAULT_HABITS.length} Done</div></div>
-      <div className="space-y-4">{DEFAULT_HABITS.map(habit => {
-          const isDone = !!habits[today]?.[habit.id];
-          return <div key={habit.id} className={`p-4 rounded-2xl flex items-center justify-between border ${isDone ? 'bg-neon-green/10 border-neon-green/50' : 'bg-white/5 border-white/5'}`}><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl bg-black ${isDone ? 'grayscale-0' : 'grayscale opacity-50'}`}>{habit.icon}</div><div><h4 className={`font-bold ${isDone ? 'text-white' : 'text-gray-400'}`}>{habit.name}</h4>{habit.type === 'counter' && <p className="text-xs text-gray-500">{habit.target} {habit.unit} daily</p>}</div></div><button onClick={() => onUpdateHabit(habit.id, !isDone)} className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all ${isDone ? 'bg-neon-green border-neon-green text-black scale-110' : 'border-gray-600 hover:border-white'}`}>{isDone && <CheckCircle size={18} />}</button></div>;
-      })}</div>
+      <div className="flex items-center justify-between mb-8">
+          <h2 className="text-3xl font-bold text-white">Habits</h2>
+          <div className="bg-white/10 px-4 py-2 rounded-full text-sm font-bold text-neon-blue">{completedCount}/{habitDefs.length} Done</div>
+      </div>
+      
+      <div className="space-y-4 mb-8">
+          {habitDefs.map(habit => {
+              const isDone = !!habits[today]?.[habit.id];
+              return (
+                  <div key={habit.id} className={`p-4 rounded-2xl flex items-center justify-between border ${isDone ? 'bg-neon-green/10 border-neon-green/50' : 'bg-white/5 border-white/5'}`}>
+                      <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl bg-black ${isDone ? 'grayscale-0' : 'grayscale opacity-50'}`}>
+                              {habit.icon}
+                          </div>
+                          <div>
+                              <h4 className={`font-bold ${isDone ? 'text-white' : 'text-gray-400'}`}>{habit.name}</h4>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => onUpdateHabit(habit.id, !isDone)} className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all ${isDone ? 'bg-neon-green border-neon-green text-black scale-110' : 'border-gray-600 hover:border-white'}`}>
+                            {isDone && <CheckCircle size={18} />}
+                        </button>
+                        <button onClick={() => onDeleteHabit(habit.id)} className="p-2 text-gray-600 hover:text-red-500 transition-colors">
+                            <Trash2 size={16} />
+                        </button>
+                      </div>
+                  </div>
+              );
+          })}
+      </div>
+
+      <button onClick={() => {
+          const name = prompt("Enter habit name:");
+          if(name) onAddHabit(name);
+      }} className="w-full bg-white/10 border border-white/10 text-gray-400 hover:text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-white/15 transition-all">
+          <Plus size={20} /> Add Habit
+      </button>
     </div>
   );
 };
@@ -1183,14 +1303,46 @@ const ProfileScreen: React.FC<{
     user: UserProfile, history: WorkoutSession[], streak: number, 
     onLogout: () => void, onUpdateWeight: (w: number) => void, onUpdateImage: (img: string) => void,
     onOpenSettings: () => void, onShare: () => void
-}> = ({ user, history, streak, onLogout, onUpdateWeight, onOpenSettings, onShare }) => {
+}> = ({ user, history, streak, onLogout, onUpdateWeight, onUpdateImage, onOpenSettings, onShare }) => {
+    
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = reader.result as string;
+                // Basic check to avoid massive payload issues in local storage/demo
+                if(base64String.length < 500000) { 
+                    onUpdateImage(base64String);
+                } else {
+                    alert("Image too large. Please pick a smaller image.");
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     return (
         <div className="h-full w-full bg-black p-6 pb-24 overflow-y-auto">
              <div className="flex justify-end mb-4"><button onClick={onLogout} className="bg-red-500/10 text-red-500 p-2 rounded-full hover:bg-red-500/20"><LogOut size={20} /></button></div>
              <div className="flex flex-col items-center mb-8">
                  <div className="w-24 h-24 rounded-full bg-gray-800 border-2 border-neon-green mb-4 relative overflow-hidden group">
                      {user.profileImage ? <img src={user.profileImage} alt="Profile" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-neon-green text-3xl font-bold">{user.name.charAt(0)}</div>}
-                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><Camera size={20} className="text-white" /></div>
+                     <div 
+                        className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        onClick={() => fileInputRef.current?.click()}
+                     >
+                         <Camera size={20} className="text-white" />
+                     </div>
+                     <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleImageUpload} 
+                        accept="image/*" 
+                        className="hidden" 
+                     />
                  </div>
                  <h2 className="text-2xl font-bold text-white">{user.name}</h2>
                  <p className="text-gray-500 text-sm">Joined {new Date(user.joinDate).toLocaleDateString()}</p>

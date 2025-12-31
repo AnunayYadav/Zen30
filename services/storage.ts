@@ -164,6 +164,29 @@ export const Storage = {
     return await Storage.getHistory();
   },
 
+  resetStats: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    // Delete all workout sessions
+    await supabase.from('workout_sessions').delete().eq('user_id', user.id);
+    // Delete habits logs
+    await supabase.from('habits').delete().eq('user_id', user.id);
+    // Delete daily steps
+    await supabase.from('daily_steps').delete().eq('user_id', user.id);
+    
+    // Reset profile stats
+    const update = {
+        streak: 0,
+        weight_history: [],
+        challenge_start_date: null
+    };
+    await supabase.from('profiles').update(update).eq('id', user.id);
+
+    // Refresh profile
+    return await Storage.getUserProfile(user.id);
+  },
+
   // --- Habits ---
 
   getHabits: async (): Promise<HabitLog> => {
