@@ -8,7 +8,7 @@ import { WORKOUT_DB } from './services/workoutData';
 import { 
   Play, Pause, Flame, Activity, Dumbbell, Zap, Clock, Footprints,
   LogOut, Settings, X, Volume2, VolumeX,
-  ChevronRight, BrainCircuit, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, CheckSquare, FileText, Shield
+  ChevronRight, BrainCircuit, Sparkles, Trash2, Calendar, Target, AlertTriangle, RefreshCw, Plus, CheckCircle, AlertCircle, Loader2, Trophy, Edit2, CheckSquare, FileText, Shield, Lock
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -243,10 +243,20 @@ const DayDetailsModal: React.FC<{
   const [editDesc, setEditDesc] = useState(day.description);
   const [editInstructions, setEditInstructions] = useState(day.instructions?.join('\n') || "");
 
-  // Auto-Complete Logic:
-  // Whenever checkedIndices changes, check if it matches total items.
+  // Auto-Save: Notes (Debounced)
   useEffect(() => {
-     if(day.type !== 'Rest') {
+    const timer = setTimeout(() => {
+        onSaveLog({ notes, checkedIndices });
+    }, 1000); // 1 sec debounce for text
+    return () => clearTimeout(timer);
+  }, [notes]);
+
+  // Auto-Save: Checks (Immediate)
+  useEffect(() => {
+    onSaveLog({ notes, checkedIndices });
+    
+    // Auto-Complete Logic based on checks
+    if(day.type !== 'Rest') {
          const total = day.instructions?.length || 0;
          if(total > 0 && checkedIndices.length === total) {
              if(!completed) onSetCompletion(true);
@@ -254,18 +264,12 @@ const DayDetailsModal: React.FC<{
              if(completed && checkedIndices.length < total) onSetCompletion(false);
          }
      }
-  }, [checkedIndices, day, completed]);
-
-  // Handle saving logs on unmount/close
-  useEffect(() => {
-    return () => {
-      if(!isEditing) {
-         onSaveLog({ notes, checkedIndices });
-      }
-    };
-  }, [notes, checkedIndices, isEditing]);
+  }, [checkedIndices, day, completed]); // React to checkedIndices changes
 
   const toggleCheck = (idx: number) => {
+    // Prevent checking future tasks
+    if (day.day > currentDayNum) return;
+
     if (checkedIndices.includes(idx)) {
       setCheckedIndices(prev => prev.filter(i => i !== idx));
     } else {
@@ -317,6 +321,7 @@ const DayDetailsModal: React.FC<{
   // Calculate percentage for progress bar inside modal
   const totalItems = day.instructions?.length || 0;
   const progressPct = totalItems > 0 ? (checkedIndices.length / totalItems) * 100 : (completed ? 100 : 0);
+  const isLocked = day.day > currentDayNum;
 
   return (
     <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
@@ -327,7 +332,7 @@ const DayDetailsModal: React.FC<{
                   <span className={`text-[10px] font-bold px-2 py-1 rounded inline-block ${day.type === 'Rest' ? 'bg-blue-500/20 text-blue-400' : 'bg-neon-green/20 text-neon-green'}`}>
                       DAY {day.day}
                   </span>
-                  {day.day > currentDayNum && <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-gray-400 flex items-center gap-1"><Target size={8}/> FUTURE</span>}
+                  {isLocked && <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-gray-400 flex items-center gap-1"><Lock size={8}/> FUTURE</span>}
                   <button onClick={() => setIsEditing(true)} className="ml-auto bg-white/5 hover:bg-white/10 p-1.5 rounded-md text-gray-400 hover:text-white transition-colors">
                      <Edit2 size={12}/>
                   </button>
@@ -349,7 +354,7 @@ const DayDetailsModal: React.FC<{
                          {day.instructions?.map((ins, i) => {
                              const isChecked = checkedIndices.includes(i);
                              return (
-                                 <div key={i} onClick={() => toggleCheck(i)} className="flex gap-3 text-sm text-gray-300 cursor-pointer group">
+                                 <div key={i} onClick={() => toggleCheck(i)} className={`flex gap-3 text-sm transition-all group ${isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer text-gray-300'}`}>
                                      <div className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all ${isChecked ? 'bg-neon-green border-neon-green text-black' : 'border-gray-600 group-hover:border-white'}`}>
                                          {isChecked && <CheckCircle size={14} />}
                                      </div>
@@ -360,9 +365,9 @@ const DayDetailsModal: React.FC<{
                      </div>
                  </div>
             ) : (
-                <div className="bg-blue-900/10 rounded-xl p-4 mb-4 border border-blue-500/20 flex items-center justify-between">
+                <div className={`bg-blue-900/10 rounded-xl p-4 mb-4 border border-blue-500/20 flex items-center justify-between ${isLocked ? 'opacity-50' : ''}`}>
                      <span className="text-blue-400 font-bold text-sm">Mark Rest Day Complete</span>
-                     <button onClick={() => onSetCompletion(!completed)} className={`w-10 h-6 rounded-full relative transition-colors ${completed ? 'bg-blue-500' : 'bg-gray-700'}`}>
+                     <button disabled={isLocked} onClick={() => onSetCompletion(!completed)} className={`w-10 h-6 rounded-full relative transition-colors ${completed ? 'bg-blue-500' : 'bg-gray-700'}`}>
                         <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${completed ? 'right-1' : 'left-1'}`}></div>
                      </button>
                 </div>
@@ -373,8 +378,9 @@ const DayDetailsModal: React.FC<{
                 <textarea 
                    value={notes}
                    onChange={(e) => setNotes(e.target.value)}
-                   placeholder="Type your progress, reps, or how it felt..."
-                   className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-neon-green outline-none h-24 resize-none placeholder-gray-600"
+                   placeholder={isLocked ? "Unlock this day to add notes..." : "Type your progress, reps, or how it felt..."}
+                   disabled={isLocked}
+                   className={`w-full bg-white/5 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-neon-green outline-none h-24 resize-none placeholder-gray-600 ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
                 />
             </div>
             
@@ -393,9 +399,10 @@ const ChallengeScreen: React.FC<{
   onCreate: (goal: string, level: string) => Promise<void>,
   onModify: (instruction: string) => Promise<void>,
   onCompleteDay: (day: number) => Promise<void>,
+  onUpdateState: (newState: ChallengeState) => void,
   onDelete: () => Promise<void>,
   onRestart: () => Promise<void>
-}> = ({ state, onCreate, onModify, onCompleteDay, onDelete, onRestart }) => {
+}> = ({ state, onCreate, onModify, onCompleteDay, onUpdateState, onDelete, onRestart }) => {
   const [goal, setGoal] = useState("");
   const [level, setLevel] = useState("Beginner");
   const [loading, setLoading] = useState(false);
@@ -416,7 +423,8 @@ const ChallengeScreen: React.FC<{
   const handleUpdateTask = async (newTask: ChallengeTask) => {
       if(!state || !state.plan) return;
       const newPlan = state.plan.map(t => t.day === newTask.day ? newTask : t);
-      await Storage.updateChallengePlan(newPlan);
+      const newState = await Storage.updateChallengePlan(newPlan);
+      if(newState) onUpdateState(newState);
   };
 
   if (!state || !state.plan || state.plan.length === 0) {
@@ -585,6 +593,7 @@ const ChallengeScreen: React.FC<{
                       {isCompleted && <CheckCircle size={10} className="mt-1 relative z-10 text-neon-green" />}
                       {!isCompleted && isToday && <div className="w-1.5 h-1.5 bg-white rounded-full mt-1 animate-ping relative z-10"></div>}
                       {isMissed && <AlertTriangle size={10} className="mt-1 relative z-10" />}
+                      {task.day > currentDay && <Lock size={8} className="absolute top-1.5 right-1.5 opacity-30"/>}
                   </button>
               );
           })}
@@ -602,15 +611,19 @@ const ChallengeScreen: React.FC<{
                       await onCompleteDay(selectedDay.day);
                   } else {
                       await Storage.uncompleteChallengeDay(selectedDay.day);
-                      // Force refresh local state hack
-                      await onCompleteDay(selectedDay.day); // Trigger reload
-                      await Storage.uncompleteChallengeDay(selectedDay.day); // Actually unset
+                      // Force refresh local state hack by calling restart or similar not ideal.
+                      // Ideally uncomplete should return newState.
+                      // For now, let's assume parent state update is needed if uncomplete returns it.
+                      // Since onCompleteDay handles update, we need a way to unset. 
+                      // Let's rely on simple toggle for now and fix state flow.
+                      // Actually Storage.uncompleteChallengeDay returns newState.
+                      const s = await Storage.uncompleteChallengeDay(selectedDay.day);
+                      if (s) onUpdateState(s);
                   }
-                  // Simple hack to trigger re-render in parent is relying on parent refetch or prop update
-                  // In real app, we'd hoist the uncomplete logic to parent
               }}
               onSaveLog={async (log) => {
-                 await Storage.saveChallengeLog(selectedDay.day, log);
+                 const newState = await Storage.saveChallengeLog(selectedDay.day, log);
+                 if (newState) onUpdateState(newState);
               }}
               onUpdateTask={handleUpdateTask}
           />
@@ -1258,6 +1271,7 @@ const App: React.FC = () => {
                 onCreate={handleCreateChallenge} 
                 onModify={handleModifyChallenge} 
                 onCompleteDay={handleCompleteChallengeDay} 
+                onUpdateState={setChallenge}
                 onDelete={async () => { await Storage.resetChallenge(); setChallenge(null); }} 
                 onRestart={async () => { const s = await Storage.restartChallenge(); setChallenge(s); }}
              />;
