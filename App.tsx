@@ -681,10 +681,18 @@ const App: React.FC = () => {
       }
   };
 
-  const handleResetChallenge = async () => {
-      if(window.confirm("Are you sure? This will delete your current 30-day progress.")) {
+  const handleDeleteChallenge = async () => {
+      if(window.confirm("Are you sure? This will delete your current plan and you'll need to generate a new one.")) {
           await Storage.resetChallenge();
           setChallenge(null);
+      }
+  };
+
+  const handleRestartChallenge = async () => {
+      if(window.confirm("Restart this specific challenge from Day 1? Your plan will stay the same, but progress will be reset.")) {
+          const newState = await Storage.restartChallenge();
+          if(newState) setChallenge(newState);
+          SoundService.playStart();
       }
   };
 
@@ -701,7 +709,7 @@ const App: React.FC = () => {
             />;
           case Screen.WORKOUTS: return <WorkoutSelectionScreen onStartWorkout={(w) => { setActiveWorkout(w); setActiveSessionMode('Workout'); }} />;
           case Screen.RUNNING:  setActiveSessionMode('Run'); return null; // Immediately switches to session overlay
-          case Screen.CHALLENGE: return <ChallengeScreen state={challenge} onCreate={handleCreateChallenge} onModify={handleModifyChallenge} onCompleteDay={handleCompleteChallengeDay} onReset={handleResetChallenge} />;
+          case Screen.CHALLENGE: return <ChallengeScreen state={challenge} onCreate={handleCreateChallenge} onModify={handleModifyChallenge} onCompleteDay={handleCompleteChallengeDay} onDelete={handleDeleteChallenge} onRestart={handleRestartChallenge} />;
           case Screen.HABITS: return <HabitTrackerScreen habits={habits} onUpdateHabit={handleUpdateHabit} />;
           case Screen.PROGRESS: return <ProgressScreen history={history} user={user!} />;
           case Screen.PROFILE: return <ProfileScreen 
@@ -853,8 +861,9 @@ const ChallengeScreen: React.FC<{
   onCreate: (goal: string, level: string) => Promise<void>,
   onModify: (instruction: string) => Promise<void>,
   onCompleteDay: (day: number) => Promise<void>,
-  onReset: () => Promise<void>
-}> = ({ state, onCreate, onModify, onCompleteDay, onReset }) => {
+  onDelete: () => Promise<void>,
+  onRestart: () => Promise<void>
+}> = ({ state, onCreate, onModify, onCompleteDay, onDelete, onRestart }) => {
   const [goal, setGoal] = useState("");
   const [level, setLevel] = useState("Beginner");
   const [loading, setLoading] = useState(false);
@@ -948,10 +957,13 @@ const ChallengeScreen: React.FC<{
                    </div>
                    <div className="flex items-center gap-2">
                        <button onClick={() => setShowModifyModal(true)} className="bg-white/10 hover:bg-neon-green/20 text-white hover:text-neon-green transition-colors px-2 py-1 rounded-lg flex items-center gap-1 text-[10px] border border-white/10">
-                           <Edit2 size={12} /> Modify Plan
+                           <Edit2 size={12} /> Modify
                        </button>
-                       <button onClick={onReset} className="bg-red-900/20 hover:bg-red-900/40 text-red-500 transition-colors px-2 py-1 rounded-lg flex items-center gap-1 text-[10px] border border-red-500/20">
+                       <button onClick={onRestart} className="bg-white/10 hover:bg-white/20 text-white transition-colors px-2 py-1 rounded-lg flex items-center gap-1 text-[10px] border border-white/10">
                            <RefreshCw size={12} /> Restart
+                       </button>
+                       <button onClick={onDelete} className="bg-red-900/20 hover:bg-red-900/40 text-red-500 transition-colors p-1.5 rounded-lg border border-red-500/20">
+                           <Trash2 size={12} />
                        </button>
                    </div>
                </div>

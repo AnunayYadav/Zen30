@@ -265,6 +265,21 @@ export const Storage = {
     return current;
   },
 
+  // Reset Progress ONLY (Keep plan)
+  restartChallenge: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const start = new Date().toISOString();
+    await supabase.from('challenges').update({
+        start_date: start,
+        completed_days: []
+    }).eq('user_id', user.id);
+    
+    return await Storage.getChallenge();
+  },
+
+  // Delete everything (Progress + Plan)
   resetChallenge: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if(user) {
