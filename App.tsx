@@ -464,6 +464,9 @@ const App: React.FC = () => {
   const [pedometerActive, setPedometerActive] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   
+  // Track last loaded user to prevent redundant loading screens on focus/reconnect
+  const lastLoadedUserId = useRef<string | null>(null);
+
   // Active Session State
   const [activeSessionMode, setActiveSessionMode] = useState<'Run' | 'Workout' | null>(null);
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
@@ -477,9 +480,17 @@ const App: React.FC = () => {
 
     const { data: { subscription } } = Storage.onAuthStateChange(async (session) => {
       if (session) {
+        // If we have already loaded data for this specific user ID, skip the blocking loader.
+        // This prevents the "Syncing" screen from flashing when the app regains focus or token refreshes.
+        if (lastLoadedUserId.current === session.user.id) {
+            return;
+        }
+
         setLoadingData(true);
         try {
           const userId = session.user.id;
+          lastLoadedUserId.current = userId; // Mark as loaded
+          
           // Attempt to fetch profile
           let profile = await Storage.getUserProfile(userId);
           
@@ -533,6 +544,7 @@ const App: React.FC = () => {
           setCurrentScreen(Screen.DASHBOARD);
         } catch (e) {
           console.error("Critical Data load error", e);
+          lastLoadedUserId.current = null; // Reset on critical error so we can retry
           // FALLBACK: Ensure user can still use app even if DB is down/missing
           if (session?.user) {
              const fallbackUser: UserProfile = {
@@ -556,6 +568,7 @@ const App: React.FC = () => {
         }
       } else {
         // No session
+        lastLoadedUserId.current = null;
         setUser(null);
         // Only force screen to AUTH if we aren't already on splash or auth
         // This prevents overwriting the splash screen logic if it's still running
